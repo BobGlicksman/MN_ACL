@@ -1,0 +1,45 @@
+trying to connect ....
+Found chip PN53
+Firmware ver. 50.1
+Waiting for an ISO14443A Card ...
+Found an ISO14443A card
+  UID Length: 4 bytes
+  UID Value: 0x52 0x0E 0x22 0xD6
+Mifare Classic card #1376658134
+
+Found an ISO14443A card
+  UID Length: 4 bytes
+  UID Value: 0x52 0x0E 0x22 0xD6
+Mifare Classic card #1376658134
+
+Found an ISO14443A card
+  UID Length: 4 bytes
+  UID Value: 0x52 0x0E 0x22 0xD6
+Mifare Classic card #1376658134
+
+Found an ISO14443A card
+  UID Length: 4 bytes
+  UID Value: 0x52 0x0E 0x22 0xD6
+Mifare Classic card #1376658134
+
+Found an ISO14443A card
+  UID Length: 4 bytes
+  UID Value: 0x52 0x0E 0x22 0xD6
+Mifare Classic card #1376658134
+
+Found an ISO14443A card
+  UID Length: 4 bytes
+  UID Value: 0x52 0x0E 0x22 0xD6
+Mifare Classic card #1376658134
+
+Found an ISO14443A card
+  UID Length: 4 bytes
+  UID Value: 0x52 0x0E 0x22 0xD6
+Mifare Classic card #1376658134
+
+Found an ISO14443A card
+  UID Length: 4 bytes
+  UID Value: 0x52 0x0E 0x22 0xD6
+Mifare Classic card #1376658134
+
+
