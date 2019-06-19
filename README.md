@@ -30,7 +30,7 @@ reported successfully using this library with Particle Photon, Electron,
 Argon and Xenon.
 ### EZF tests: 
 basic tests of webhook integration from Particle cloud to
-Maker Nexus EZFacility account.  [Noting here at present].
+Maker Nexus EZFacility account.  [Nothing here at present].
 
 
 
