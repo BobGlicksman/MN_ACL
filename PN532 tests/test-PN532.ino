@@ -14,16 +14,19 @@
  *  Both SCL and SDA pulled up to Photon +3.3v using 5.6kohm resistors
  *  PN532 breakout board IRQ to Photon D3
  *  Photon D4 not connected but reserved for "RST"
+ *  The breakout board jumpers are set for I2C as follows:  SEL 1 is OFF and SEL 0 is ON
  * 
- * The program initially waits 5 seconds so that a tty port can be connected got
+ * The program initially waits 5 seconds so that a tty port can be connected for
  * serial console communication.  A "trying to connect ..." message is then
  * printed to the serial port to show that things are ready.  Next, the Photon
- * communicated with the breakout board to read out and print the PN532 firmware
+ * communicates with the breakout board to read out and print the PN532 firmware
  * version data to show that the Photon is talking to the breakout board.  
  * 
  * After an RFID card is presented to the breakout board, the UID is read out
  * in loop() and the UID is printed (HEX value) and tested to see if it is a Classic
  * card, in which case the UID is decoded and the data is printed.
+ * 
+ * Version 1.1: added a 1 second delay to the end of loop() to allow the serial buffer to flush out.
  * 
  * Adapted from code at:
  *  https://classes.engineering.wustl.edu/ese205/core/index.php?title=Particle_photon_setup_with_PN532_NFC_board
@@ -31,6 +34,7 @@
  * (c) 2019; Team Practical Projects
  * 
  * version 1.0; 6/19/19
+ * version 1.1; 6/20/19
  * 
 ************************************************************************/
 
@@ -104,5 +108,6 @@ void loop() {
         
         Serial.println("");
     }
+    delay(1000); // wait for serial buffer to flush out
 }
 
