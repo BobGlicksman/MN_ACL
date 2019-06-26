@@ -26,7 +26,7 @@
  * By: Bob Glicksman
  * (c) 2019; Team Practical Projects
  * 
- * version 1.2; 6/25/19.  Eliminate UID length tests and messages
+ * version 1.3; 6/26/19.
  * 
 ************************************************************************/
 
@@ -123,7 +123,7 @@ void setup() {
  
 void loop(void) {
     uint8_t success;
-    uint8_t dataBlock[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}; //  16 byte buffer to hold a block of data
+    uint8_t dataBlock[] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15}; //  16 byte buffer to hold a block of data
 
     
     // Wait for an ISO14443A type cards (Mifare, etc.).  When one is found
@@ -145,29 +145,53 @@ void loop(void) {
         delay(1000);
     #endif
 
-    // start the tests here
-    Serial.println("Trying to authenticate with default key A ....");
-    // try to authenticate blocks 0 and 1 (relative to SECTOR) with default key A
-    authenticateBlock(0, 0, DEFAULT_KEY_A);
-    authenticateBlock(1, 0, DEFAULT_KEY_A); 
+// START THE TESTS HERE
+/*    
+    // test the card to determine its type
+    uint8_t cardType = testCard();
+    Serial.print("\n\nCard is type ");
+    if(cardType == 0) {
+         Serial.println("factory fresh\n");
+    } else if (cardType == 1) {
+         Serial.println("Maker Nexus formatted\n");        
+    } else {
+        Serial.println("other\n");
+    }
+*/
+uint8_t cardType = 0;   // for debugging
+    // read the block 0 (relative) data using key A according to the card type
+    if(cardType == 0) { // factory fresh card -- use the default key A to read
+        #ifdef DEBUG
+            Serial.println("Reading data using default key A");
+        #endif
+        bool OK =  readBlockData(dataBlock, 0, 0, DEFAULT_KEY_A);
+        if(OK == true) {    // successful read
+            #ifdef DEBUG
+                Serial.println("data read OK.");
+            #endif
+            nfc.PrintHexChar(dataBlock, 16);    // print the data
+        } else {
+            Serial.println("data read failed! ..");
+        }
         
-    Serial.println("Trying to authenticate with default key B ....");
-    // try to authenticate blocks 0 and 1 (relative to SECTOR) with default key B
-    authenticateBlock(0, 1, DEFAULT_KEY_B);
-    authenticateBlock(1, 1, DEFAULT_KEY_B);
-        
-    Serial.println("Trying to authenticate with MN secret key A ....");
-    // try to authenticate blocks 0 and 1 (relative to SECTOR) with MN secret key A
-    authenticateBlock(0, 0, MN_SECRET_KEY_A);
-    authenticateBlock(1, 0, MN_SECRET_KEY_A);
-        
-    Serial.println("Trying to authenticate with MN secret key B ....");
-    // try to authenticate blocks 0 and 1 (relative to SECTOR) with MN secret key B
-    authenticateBlock(0, 1, MN_SECRET_KEY_B);
-    authenticateBlock(1, 1, MN_SECRET_KEY_B);
-        
-    // conclude tests - terminate loop here
-    Serial.println("..... end of test run ....\n\n");
+    } else if(cardType == 1) {  // MN formatted card -- use the MN secret key A to read
+        #ifdef DEBUG
+            Serial.println("Reading data using MN secret key A");
+        #endif
+        bool OK =  readBlockData(dataBlock, 0, 0, MN_SECRET_KEY_A);
+        if(OK == true) {    // successful read
+            #ifdef DEBUG
+                Serial.println("data read OK.");
+            #endif
+            nfc.PrintHexChar(dataBlock, 16);    // print the data
+        } else {
+            Serial.println("data read failed! ..");
+        }
+    
+    } else {    // not a recognized card type - cannot read data
+        Serial.println("card is not a recognized type.");
+    }
+   
     delay(10000); // delay 10 seconds to record the data
     
 }   // end of loop()
@@ -291,3 +315,135 @@ uint8_t authenticateBlock(int blockNum, uint8_t keyNum, uint8_t *key) {
         
     return success;
 }  //end of authenticateBlock()
+
+/**************************************************************************************************
+ * readBlockData(uint8_t *data, int blockNum,  uint8_t keyNum, uint8_t *key):  Read out the data from the 
+ *  specified relative block number using the indicated key to authenticate the block prior
+ *  to trying to read data.
+ * 
+ *  params:
+ *      data: pointer to a 16 byte array to hold the returned data     
+ *      blockNum:  the block number relative to the current SECTOR
+ *      keyNum:  0 for key A; 1 for key B
+ *      key: pointer to a 6 byte array holding the value of the reding key
+ * 
+ * return:
+ *      0 (false) if operation failed
+ *      1 (true) if operation succeeded
+ *   
+ **************************************************************************************************/
+ bool readBlockData(uint8_t *data, int blockNum,  uint8_t keyNum, uint8_t *key) {
+    bool authOK = false;
+    bool readOK = false;
+    
+    // compute the absolute block number:  (SECTOR * 4) + relative block number
+    uint32_t absoluteBlockNumber = (SECTOR * 4) + blockNum;
+    
+    // first need to authenticate the block with a key
+    authOK = authenticateBlock(blockNum, keyNum, key);
+     
+    if (authOK == true) {  // Block is authenticated so we can read the data
+        readOK = nfc.mifareclassic_ReadDataBlock(absoluteBlockNumber, data);
+        
+        if(readOK == true) {
+            #ifdef DEBUG
+                Serial.println("\nData read OK\n");
+                delay(1000);
+            #endif 
+            return true;   // successful read
+        } else {
+            #ifdef DEBUG
+                Serial.println("\nData read failed!\n");
+                delay(1000);
+            #endif 
+            return false;   // failed  read            
+        }
+        
+    } else {
+        #ifdef DEBUG
+            Serial.println("\nBlock authentication failed!\n");
+            delay(1000);
+        #endif
+        return false;
+    }
+
+ }  // end of readBlockData()
+
+/***************************************************************************************************
+ * testCard():  Tests an ISO14443A card to see if it is factory fresh, MN formatted, or other.
+ *  The test is performed by authenticating relative block 0 on the designated sector (nominally
+ *  sector 1).  If the block authenticates with both default key A and default key B then the card
+ *  is declared to be factory fresh.  If the block authenticates with both MN secret key A and
+ *  MN secret key B, then the card is declared to be MN formatted.  Otherwise, the card is 
+ *  declared to be "other" and the designed sector is likely unusable.
+ * 
+ * return:  result code, as uint8_t, as follows:
+ *  0 means factory fresh card
+ *  1 means MN formatted card
+ *  2 means neither type (sector most likely unusable)
+****************************************************************************************************/
+uint8_t testCard() {
+    bool dKeyA = false;
+    bool dKeyB = false;
+    bool MNkeyA = false;
+    bool MNkeyB = false;
+    
+    #ifdef DEBUG
+        Serial.println("Trying to authenticate with default key A ....");
+    #endif
+    dKeyA = authenticateBlock(0, 0, DEFAULT_KEY_A);
+        
+    #ifdef DEBUG
+        Serial.println("Trying to authenticate with default key B ....");
+    #endif
+    dKeyB = authenticateBlock(0, 1, DEFAULT_KEY_B);
+
+    #ifdef DEBUG    
+        Serial.println("Trying to authenticate with MN secret key A ....");
+    #endif
+    MNkeyA = authenticateBlock(1, 0, MN_SECRET_KEY_A);
+        
+    #ifdef DEBUG
+        Serial.println("Trying to authenticate with MN secret key B ....");
+    #endif
+    MNkeyB = authenticateBlock(0, 1, MN_SECRET_KEY_B);
+
+    #ifdef DEBUG
+        if(dKeyA == true) {
+            Serial.println("default key A authenticated ...");
+        } else {
+            Serial.println("default key A failed ...");
+        }
+        
+        if(dKeyB == true) {
+            Serial.println("default key B authenticated ...");
+        } else {
+            Serial.println("default key B failed ...");
+        }
+        
+        if(MNkeyA == true) {
+            Serial.println("MN secret key A authenticated ...");
+        } else {
+            Serial.println("MN secret key A failed ...");
+        }
+        
+        if(MNkeyB == true) {
+            Serial.println("MN secret key B authenticated ...");
+        } else {
+            Serial.println("MN secret key B failed ...");
+        }
+        Serial.println("");
+        delay(1000);
+    #endif
+    
+    if( (dKeyA == true) && (dKeyB == true) ) {
+        return 0;   // card is factory fresh
+    }
+    
+    if( (MNkeyA == true) && (MNkeyB == true) ) {
+        return 1;   // card is MN formatted
+    }
+    
+    return 2;   // card is other
+}   // end of cardTest()
+
