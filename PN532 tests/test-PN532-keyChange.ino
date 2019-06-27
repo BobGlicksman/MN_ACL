@@ -18,15 +18,17 @@
  *  Breakout board jumpers are set for I2C:  SEL 1 is OFF and SEL 0 is ON
  * 
  * This first test will not change encrytion keys nor access control bits.
- * The test will just try to authenticate blocks 0 and 1 relative to the designated
- * sector using both the default keys and the MN secret keys.
+ * The test will just try to ascertain the card formatting (by testing 
+ * authentication of block 2 relative to the selected sector with default
+ * factory and MN kays) and then using the proper keys to read data
+ * from a block in the selected secotr.
  * 
  * Adapted from code at:
  *   https://github.com/adafruit/Adafruit-PN532/blob/master/examples
  * By: Bob Glicksman
  * (c) 2019; Team Practical Projects
  * 
- * version 1.3; 6/26/19.
+ * version 1.4; 6/26/19.
  * 
 ************************************************************************/
 
@@ -109,7 +111,6 @@ void setup() {
 */    
     // configure board to read RFID tags
     nfc.SAMConfig();
-    Serial.println("Waiting for an ISO14443A Card ...");
     
     
     //flash the D7 LED twice
@@ -128,7 +129,6 @@ void loop(void) {
     
     // Wait for an ISO14443A type cards (Mifare, etc.).  When one is found
     // 'uid' will be populated with the UID, and uidLength will indicate
-
     Serial.println("waiting for ISO14443A card to be presented to the reader ...");
     while(!nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
         // JUST WAIT FOR A CARD
@@ -146,7 +146,7 @@ void loop(void) {
     #endif
 
 // START THE TESTS HERE
-/*    
+    
     // test the card to determine its type
     uint8_t cardType = testCard();
     Serial.print("\n\nCard is type ");
@@ -157,8 +157,8 @@ void loop(void) {
     } else {
         Serial.println("other\n");
     }
-*/
-uint8_t cardType = 0;   // for debugging
+
+//uint8_t cardType = 1;   // for debugging
     // read the block 0 (relative) data using key A according to the card type
     if(cardType == 0) { // factory fresh card -- use the default key A to read
         #ifdef DEBUG
@@ -192,7 +192,10 @@ uint8_t cardType = 0;   // for debugging
         Serial.println("card is not a recognized type.");
     }
    
-    delay(10000); // delay 10 seconds to record the data
+    Serial.println("Remove card from reader ...");
+    while(nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
+        // wait for card to be removed
+    }
     
 }   // end of loop()
 
@@ -371,11 +374,12 @@ uint8_t authenticateBlock(int blockNum, uint8_t keyNum, uint8_t *key) {
 
 /***************************************************************************************************
  * testCard():  Tests an ISO14443A card to see if it is factory fresh, MN formatted, or other.
- *  The test is performed by authenticating relative block 0 on the designated sector (nominally
- *  sector 1).  If the block authenticates with both default key A and default key B then the card
- *  is declared to be factory fresh.  If the block authenticates with both MN secret key A and
- *  MN secret key B, then the card is declared to be MN formatted.  Otherwise, the card is 
- *  declared to be "other" and the designed sector is likely unusable.
+ *  The test is performed by authenticating relative block 2 (not otherwise used data block)
+ *  on the designated sector (nominally sector 1).  If the block authenticates with default 
+ *  key A then the card is declared to be factory fresh.  If the block 
+ *  authenticates with MN secret key A then the card is declared to be 
+ *  MN formatted.  Otherwise, the card is declared to be "other" and the designed sector is likely 
+ *  unusable.
  * 
  * return:  result code, as uint8_t, as follows:
  *  0 means factory fresh card
@@ -383,67 +387,34 @@ uint8_t authenticateBlock(int blockNum, uint8_t keyNum, uint8_t *key) {
  *  2 means neither type (sector most likely unusable)
 ****************************************************************************************************/
 uint8_t testCard() {
-    bool dKeyA = false;
-    bool dKeyB = false;
-    bool MNkeyA = false;
-    bool MNkeyB = false;
+    bool success = false;
     
     #ifdef DEBUG
         Serial.println("Trying to authenticate with default key A ....");
     #endif
-    dKeyA = authenticateBlock(0, 0, DEFAULT_KEY_A);
-        
-    #ifdef DEBUG
-        Serial.println("Trying to authenticate with default key B ....");
-    #endif
-    dKeyB = authenticateBlock(0, 1, DEFAULT_KEY_B);
-
-    #ifdef DEBUG    
-        Serial.println("Trying to authenticate with MN secret key A ....");
-    #endif
-    MNkeyA = authenticateBlock(1, 0, MN_SECRET_KEY_A);
-        
-    #ifdef DEBUG
-        Serial.println("Trying to authenticate with MN secret key B ....");
-    #endif
-    MNkeyB = authenticateBlock(0, 1, MN_SECRET_KEY_B);
-
-    #ifdef DEBUG
-        if(dKeyA == true) {
-            Serial.println("default key A authenticated ...");
-        } else {
-            Serial.println("default key A failed ...");
+    success = authenticateBlock(2, 0, DEFAULT_KEY_A);
+    if(success == true)   {   // we can assume a factory fresh card
+        #ifdef DEBUG
+            Serial.println("default key A authenticated.  Assume factory fresh card ...");
+        #endif
+        return 0;   // code for factory fresh card
+    } else {    // not a factory fresh card; reset and test for MN formatted card
+        #ifdef DEBUG
+            Serial.println("Not a factory fresh card.  Reset and test for MN format .....");
+        #endif
+        // reset by reading the targe ID again
+        nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength);
+        success = authenticateBlock(2, 0, MN_SECRET_KEY_A);        
+        if(success == true) {   // we can assume an MN formatted card
+            #ifdef DEBUG
+                Serial.println("MN secret key A authenticated.  Assume NM formatted card ...");
+            #endif
+            return 1;   // code for MN formatted card
+        } else {    // neither test passed - card type is unknown
+            #ifdef DEBUG
+                Serial.println("Not an MN formatted card - card type unknown ...");
+            #endif
+            return 2;   // code for unknown card format
         }
-        
-        if(dKeyB == true) {
-            Serial.println("default key B authenticated ...");
-        } else {
-            Serial.println("default key B failed ...");
-        }
-        
-        if(MNkeyA == true) {
-            Serial.println("MN secret key A authenticated ...");
-        } else {
-            Serial.println("MN secret key A failed ...");
-        }
-        
-        if(MNkeyB == true) {
-            Serial.println("MN secret key B authenticated ...");
-        } else {
-            Serial.println("MN secret key B failed ...");
-        }
-        Serial.println("");
-        delay(1000);
-    #endif
-    
-    if( (dKeyA == true) && (dKeyB == true) ) {
-        return 0;   // card is factory fresh
     }
-    
-    if( (MNkeyA == true) && (MNkeyB == true) ) {
-        return 1;   // card is MN formatted
-    }
-    
-    return 2;   // card is other
-}   // end of cardTest()
-
+}   // end of testCard()
