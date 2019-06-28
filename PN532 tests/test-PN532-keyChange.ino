@@ -212,7 +212,7 @@ void loop(void) {
         #ifdef DEBUG
             Serial.println("Writing data using MN secret key B");
         #endif
-        bool OK =  writeBlockData(TEST_PAT_1, 1, 1, MN_SECRET_KEY_B);
+        bool OK =  writeBlockData(TEST_PAT_2, 1, 1, MN_SECRET_KEY_B);
         if(OK == true) {    // successful write
             #ifdef DEBUG
                 Serial.println("data written OK.");
@@ -222,6 +222,22 @@ void loop(void) {
             nfc.PrintHexChar(dataBlock, 16);    // print the data
         } else {
             Serial.println("data write failed! ..");
+        }
+        
+        // now try and write using MN secret key A -- this should fail if ACBs are right!
+        #ifdef DEBUG
+            Serial.println("\nAttempting to write data using MN secret key A - should fail");
+        #endif
+        OK =  writeBlockData(TEST_PAT_1, 1, 0, MN_SECRET_KEY_A);
+        if(OK == true) {    // successful write
+            #ifdef DEBUG
+                Serial.println("OH OH -- data written OK.");
+            #endif
+            // now read the data back with keyA
+            readBlockData(dataBlock, 1, 0, MN_SECRET_KEY_A);
+            nfc.PrintHexChar(dataBlock, 16);    // print the data
+        } else {
+            Serial.println("data write failed - OK! ..");
         }
     
     } else {    // not a recognized card type - cannot read data
@@ -512,5 +528,3 @@ uint8_t testCard() {
         }
     }
 }   // end of testCard()
-        
-
