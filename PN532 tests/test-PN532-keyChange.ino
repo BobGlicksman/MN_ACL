@@ -17,22 +17,29 @@
  *  Photon D4 not connected but reserved for "RST"
  *  Breakout board jumpers are set for I2C:  SEL 1 is OFF and SEL 0 is ON
  * 
- * This first test will not change encrytion keys nor access control bits.
- * The test will try to ascertain the card formatting (by testing 
- * authentication of block 2 relative to the selected sector with default
- * factory and MN kays) and then using the proper keys to write and read data
- * from a block in the selected sector.
+ * This program determines if an ISO14443A card presented to the reader is
+ * factory fresh or if it has been formatted as Maker Nexus.  Based upon the
+ * determined format, the firmware then changes keys to reverse the format;
+ * i.e. make factory fresh to MN or make MN to factory fresh.  After changing
+ * the card format, this firmware then writes some data to blocks 0 and 1
+ * and reads them back, in order to verfy the key changes.  If the new format
+ * is factory fresh, the data written to both blocks is 16 bytes of 0x00.  However,
+ * if the new format is MN, the data written to blocks 0 and 1 is test data 
+ * that is different for each block.  Thus, the firmware toggles the card
+ * back and forth between MN format and factory default format with each 
+ * placement and removal of the test card.
  * 
- * Adapted from code at:
- *   https://github.com/adafruit/Adafruit-PN532/blob/master/examples
- * By: Bob Glicksman
  * (c) 2019; Team Practical Projects
  * 
- * version 1.5; 6/28/19.
+ * Author: Bob Glicksman
+ * version 2.0; 6/28/19.
+ * 
+ * BUGS: for some reason, commenting out #define DEBUG does not remove
+ * all of the debugging prints from the results.
  * 
 ************************************************************************/
 
-#define DEBUG   // uncomment for debugging mode
+//#define DEBUG   // uncomment for debugging mode
 
 // This #include statement was automatically added by the Particle IDE.
 #include <Adafruit_PN532.h>
@@ -102,14 +109,7 @@ void setup() {
     message += (versiondata>>8) & 0xFF;
     Serial.println(message);
     
-/*    Serial.print("Found chip PN5");
-    Serial.println((versiondata>>24) & 0xFF, HEX);
-    Serial.print("Firmware ver. ");
-    Serial.print((versiondata>>16) & 0xFF, DEC);
-    Serial.print('.');
-    Serial.println((versiondata>>8) & 0xFF, DEC);
-*/    
-    // configure board to read RFID tags
+    // now start up the card reader
     nfc.SAMConfig();
     
     
@@ -125,6 +125,7 @@ void setup() {
 void loop(void) {
     uint8_t success;
     uint8_t dataBlock[] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15}; //  16 byte buffer to hold a block of data
+    bool flag = false;  // toggle flag for testing purposes
 
     
     // Wait for an ISO14443A type cards (Mifare, etc.).  When one is found
@@ -158,100 +159,74 @@ void loop(void) {
         Serial.println("other\n");
     }
 
-    // read the block 0 (relative) data using key A according to the card type
-    if(cardType == 0) { // factory fresh card -- use the default key A to read
-        #ifdef DEBUG
-            Serial.println("Reading data using default key A");
-        #endif
-        bool OK =  readBlockData(dataBlock, 0, 0, DEFAULT_KEY_A);
-        if(OK == true) {    // successful read
-            #ifdef DEBUG
-                Serial.println("data read OK.");
-            #endif
-            nfc.PrintHexChar(dataBlock, 16);    // print the data
+    // now reverse the keys and try writing/reading some test data
+    if(cardType == 0) { // factory fresh card
+        // change the keys to make this an MN card
+        bool OK = changeKeys(0, DEFAULT_KEY_A, MN_SECRET_KEY_A, MN_SECRET_KEY_B, MN_SECURE_ACB);
+        
+        if(OK == true) {
+            Serial.println("\nMade fresh card to MN card OK\n");
+            
+            // now write test data to block 0 and 1 of the MN sector using secret key B
+            writeBlockData(TEST_PAT_1, 0,  1, MN_SECRET_KEY_B);
+            writeBlockData(TEST_PAT_2, 1,  1, MN_SECRET_KEY_B);
+            
+            // now read the data back using MN secret key A
+            readBlockData(dataBlock, 0,  0, MN_SECRET_KEY_A);
+            Serial.println("The new block 0 data is:");
+            nfc.PrintHex(dataBlock, 16);
+            Serial.println("");
+            
+            readBlockData(dataBlock, 1,  0, MN_SECRET_KEY_A);
+            Serial.println("The new block 1 data is:");
+            nfc.PrintHex(dataBlock, 16); 
+            
+            Serial.println("");
+             
+            
         } else {
-            Serial.println("data read failed! ..");
+            Serial.println("\nFailed to make fresh card into MN card\n");           
         }
         
-    } else if(cardType == 1) {  // MN formatted card -- use the MN secret key A to read
-        #ifdef DEBUG
-            Serial.println("Reading data using MN secret key A");
-        #endif
-        bool OK =  readBlockData(dataBlock, 0, 0, MN_SECRET_KEY_A);
-        if(OK == true) {    // successful read
-            #ifdef DEBUG
-                Serial.println("data read OK.");
-            #endif
-            nfc.PrintHexChar(dataBlock, 16);    // print the data
+    } else  {  // MN formatted card
+        // change the keys to make this a factory fresh card
+        bool OK = changeKeys(1, MN_SECRET_KEY_B, DEFAULT_KEY_A, DEFAULT_KEY_B, DEFAULT_ACB);
+        
+        if(OK == true) {
+            Serial.println("\nMade MN card into fresh card OK\n");
+            
+            uint8_t factoryData[] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+            
+            // now write factory data to block 0 and 1 of the MN sector using factory key A
+            writeBlockData(factoryData, 0,  0, DEFAULT_KEY_A);
+            writeBlockData(factoryData, 1,  0, DEFAULT_KEY_A);
+            
+            // now read the data back using factory default key A
+            readBlockData(dataBlock, 0,  0, DEFAULT_KEY_A);
+            Serial.println("The new block 0 data is:");
+            nfc.PrintHex(dataBlock, 16);
+            Serial.println("");
+            
+            readBlockData(dataBlock, 1,  0, DEFAULT_KEY_A);
+            Serial.println("The new block 1 data is:");
+            nfc.PrintHex(dataBlock, 16); 
+            
+            Serial.println("");
+            
+            
         } else {
-            Serial.println("data read failed! ..");
+            Serial.println("\nFailed to make fresh card into MN card\n");           
         }
-    
-    } else {    // not a recognized card type - cannot read data
-        Serial.println("card is not a recognized type.");
     }
     
-    // write the block 1 (relative) data using key B according to the card type
-    if(cardType == 0) { // factory fresh card -- use the default key B to write
-        #ifdef DEBUG
-            Serial.println("Writing data using default key B");
-        #endif
-        bool OK =  writeBlockData(TEST_PAT_1, 1, 1, DEFAULT_KEY_B);
-        if(OK == true) {    // successful write
-            #ifdef DEBUG
-                Serial.println("data written OK.");
-            #endif
-            // now read the data back with keyA
-            readBlockData(dataBlock, 1, 0, DEFAULT_KEY_A);
-            nfc.PrintHexChar(dataBlock, 16);    // print the data
-        } else {
-            Serial.println("data write failed! ..");
-        }
-        
-    } else if(cardType == 1) {  // MN formatted card -- use the MN secret key B to write
-        #ifdef DEBUG
-            Serial.println("Writing data using MN secret key B");
-        #endif
-        bool OK =  writeBlockData(TEST_PAT_2, 1, 1, MN_SECRET_KEY_B);
-        if(OK == true) {    // successful write
-            #ifdef DEBUG
-                Serial.println("data written OK.");
-            #endif
-            // now read the data back with keyA
-            readBlockData(dataBlock, 1, 0, MN_SECRET_KEY_A);
-            nfc.PrintHexChar(dataBlock, 16);    // print the data
-        } else {
-            Serial.println("data write failed! ..");
-        }
-        
-        // now try and write using MN secret key A -- this should fail if ACBs are right!
-        #ifdef DEBUG
-            Serial.println("\nAttempting to write data using MN secret key A - should fail");
-        #endif
-        OK =  writeBlockData(TEST_PAT_1, 1, 0, MN_SECRET_KEY_A);
-        if(OK == true) {    // successful write
-            #ifdef DEBUG
-                Serial.println("OH OH -- data written OK.");
-            #endif
-            // now read the data back with keyA
-            readBlockData(dataBlock, 1, 0, MN_SECRET_KEY_A);
-            nfc.PrintHexChar(dataBlock, 16);    // print the data
-        } else {
-            Serial.println("data write failed - OK! ..");
-        }
-    
-    } else {    // not a recognized card type - cannot read data
-        Serial.println("card is not a recognized type.");
-    }
-   
     Serial.println("Remove card from reader ...");
     while(nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
         // wait for card to be removed
     }
     
-    
-    
 }   // end of loop()
+
+/*************** FUNCTIONS FOR USE IN REAL APPLICATIONS *******************************/
 
 /**************************************************************************************
  * createTrailerBlock():  creates a 16 byte data block from two 6 byte keys and 4 bytes
@@ -320,8 +295,8 @@ uint8_t writeTrailerBlock(int sector, uint8_t *data) {
  *      
 ****************************************************************************************/
 uint8_t authenticateBlock(int blockNum, uint8_t keyNum, uint8_t *key) {
-    // check that the relative block number is 0, 1 or 2 only
-    if(blockNum > 2) {
+    // check that the relative block number is 0, 1, 2 or 3 only
+    if(blockNum > 3) {
         #ifdef DEBUG
             Serial.print("bad relative block number: ");
             Serial.println(blockNum);
@@ -340,6 +315,7 @@ uint8_t authenticateBlock(int blockNum, uint8_t keyNum, uint8_t *key) {
             Serial.println("bad key number.  Must be 0 or 1");
             delay(1000);
         #endif
+        
         return 0;   // return with error indication
     }
     
@@ -394,6 +370,17 @@ uint8_t authenticateBlock(int blockNum, uint8_t keyNum, uint8_t *key) {
     bool authOK = false;
     bool readOK = false;
     
+    // check that the relative block number is 0, 1, 2 only
+    if(blockNum > 2) {
+        #ifdef DEBUG
+            Serial.print("bad relative block number: ");
+            Serial.println(blockNum);
+            delay(1000);
+        #endif
+        
+        return 0;   // return with error indication
+    }
+    
     // compute the absolute block number:  (SECTOR * 4) + relative block number
     uint32_t absoluteBlockNumber = (SECTOR * 4) + blockNum;
     
@@ -408,12 +395,14 @@ uint8_t authenticateBlock(int blockNum, uint8_t keyNum, uint8_t *key) {
                 Serial.println("\nData read OK\n");
                 delay(1000);
             #endif 
+            
             return true;   // successful read
         } else {
             #ifdef DEBUG
                 Serial.println("\nData read failed!\n");
                 delay(1000);
             #endif 
+            
             return false;   // failed  read            
         }
         
@@ -422,6 +411,7 @@ uint8_t authenticateBlock(int blockNum, uint8_t keyNum, uint8_t *key) {
             Serial.println("\nBlock authentication failed!\n");
             delay(1000);
         #endif
+        
         return false;
     }
 
@@ -449,6 +439,17 @@ uint8_t authenticateBlock(int blockNum, uint8_t keyNum, uint8_t *key) {
     bool authOK = false;
     bool writeOK = false;
     
+    // check that the relative block number is 0, 1, 2 only
+    if(blockNum > 2) {
+        #ifdef DEBUG
+            Serial.print("bad relative block number: ");
+            Serial.println(blockNum);
+            delay(1000);
+        #endif
+        
+        return 0;   // return with error indication
+    }
+    
     // compute the absolute block number:  (SECTOR * 4) + relative block number
     uint32_t absoluteBlockNumber = (SECTOR * 4) + blockNum;
     
@@ -463,12 +464,14 @@ uint8_t authenticateBlock(int blockNum, uint8_t keyNum, uint8_t *key) {
                 Serial.println("\nData written OK\n");
                 delay(1000);
             #endif 
+            
             return true;   // successful write
         } else {
             #ifdef DEBUG
                 Serial.println("\nData write failed!\n");
                 delay(1000);
             #endif 
+            
             return false;   // failed  write            
         }
         
@@ -477,10 +480,83 @@ uint8_t authenticateBlock(int blockNum, uint8_t keyNum, uint8_t *key) {
             Serial.println("\nBlock authentication failed!\n");
             delay(1000);
         #endif
+        
         return false;
     }
 
  }  // end of writeBlockData()
+ 
+ /**************************************************************************************************
+  * changeKeys(uint8_t *oldKey, uint8_t *newKayA, uint8_t *newKayB, uint8_t *newACB):  changes the
+  *  sector trailer bock of the current SECTOR with news keys and new access control bits.  A
+  *  currently valid key is needed to authentication with.
+  * 
+  * params:
+  *     oldKeyNum: 0 for keyA, 1 for keyB.  Old key needed to authenticate for writing
+  *     oldKey: pointer to a byte array containing the current key needed for writing the sector
+  *         trailer block
+  *     newKeyA: pointer to a 6 byte array containing the new key A to write
+  *     newKeyB: pointer to a 6 byte array containing the new key B to write
+  *     newACB: pointer to a 4 byte array containing the new access control bits to write
+  * 
+  * return:
+  *     true indicates success; false otherwise
+ ****************************************************************************************************/
+ bool changeKeys(uint8_t oldKeyNum, uint8_t *oldKey, uint8_t *newKeyA, uint8_t *newKeyB, uint8_t *newACB) {
+    
+    // compute the absolute block number of the sector trailer.
+    //  The sector trailer blcok is relative block 3 of the sector for a Classic 1K card
+    uint32_t absoluteBlockNumber = (SECTOR * 4) + 3;
+    
+    #ifdef DEBUG
+        Serial.print("\nChanging keys for sector ");
+        Serial.println(SECTOR);
+    #endif
+
+    // we must first authenticate this block -- relative block 3 -- with the old key
+   bool success = authenticateBlock(3, oldKeyNum, oldKey);
+    if(success == true) {
+        #ifdef DEBUG
+            Serial.println("authentication with current key successful.");
+        #endif  
+        
+        // write the new keys and ACB to the sector trailer block
+        // first make the new block
+        uint8_t newBlock[16];
+        createTrailerBlock(newKeyA, newKeyB, newACB, newBlock);
+        #ifdef DEBUG
+            Serial.println("New sector trailer block is:");
+            nfc.PrintHex(newBlock, 16);
+            Serial.println("");
+        #endif
+        
+        //now write it to the sector trailer block on the card        
+        uint8_t OK = writeTrailerBlock(SECTOR, newBlock);
+        
+        if(OK == true) {
+            #ifdef DEBUG
+                Serial.println("New sector trailer written successfully!");
+            #endif 
+            
+            return true;
+        } else {
+             #ifdef DEBUG
+                Serial.println("New sector trailer write failed!");
+            #endif 
+            
+            return false;           
+        }
+        
+    } else {
+        #ifdef DEBUG
+            Serial.println("authentication with current key failed.");
+        #endif
+        
+        return false;
+    }
+    
+ } // end of changeKeys()
+ 
 
 /***************************************************************************************************
  * testCard():  Tests an ISO14443A card to see if it is factory fresh, MN formatted, or other.
@@ -502,16 +578,19 @@ uint8_t testCard() {
     #ifdef DEBUG
         Serial.println("Trying to authenticate with default key A ....");
     #endif
+    
     success = authenticateBlock(2, 0, DEFAULT_KEY_A);
     if(success == true)   {   // we can assume a factory fresh card
         #ifdef DEBUG
             Serial.println("default key A authenticated.  Assume factory fresh card ...");
         #endif
+        
         return 0;   // code for factory fresh card
     } else {    // not a factory fresh card; reset and test for MN formatted card
         #ifdef DEBUG
             Serial.println("Not a factory fresh card.  Reset and test for MN format .....");
         #endif
+        
         // reset by reading the targe ID again
         nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength);
         success = authenticateBlock(2, 0, MN_SECRET_KEY_A);        
@@ -519,11 +598,13 @@ uint8_t testCard() {
             #ifdef DEBUG
                 Serial.println("MN secret key A authenticated.  Assume NM formatted card ...");
             #endif
+            
             return 1;   // code for MN formatted card
         } else {    // neither test passed - card type is unknown
             #ifdef DEBUG
                 Serial.println("Not an MN formatted card - card type unknown ...");
             #endif
+            
             return 2;   // code for unknown card format
         }
     }
