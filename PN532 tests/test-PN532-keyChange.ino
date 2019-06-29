@@ -32,14 +32,14 @@
  * (c) 2019; Team Practical Projects
  * 
  * Author: Bob Glicksman
- * version 2.0; 6/28/19.
+ * version 2.1; 6/28/19.
  * 
- * BUGS: for some reason, commenting out #define DEBUG does not remove
- * all of the debugging prints from the results.
+ * v2.1: changed #define DEBUG to #define TEST.  For some reason, commenting
+ * out #define DEBUG does not work, but #define TEST does work.
  * 
 ************************************************************************/
 
-//#define DEBUG   // uncomment for debugging mode
+//#define TEST     // uncomment for debugging mode
 
 // This #include statement was automatically added by the Particle IDE.
 #include <Adafruit_PN532.h>
@@ -136,7 +136,7 @@ void loop(void) {
     }
   
 
-    #ifdef DEBUG
+    #ifdef TEST
         // Display some basic information about the card
         Serial.println("Found an ISO14443A card");
         Serial.print("  UID Length: ");Serial.print(uidLength, DEC);Serial.println(" bytes");
@@ -297,7 +297,7 @@ uint8_t writeTrailerBlock(int sector, uint8_t *data) {
 uint8_t authenticateBlock(int blockNum, uint8_t keyNum, uint8_t *key) {
     // check that the relative block number is 0, 1, 2 or 3 only
     if(blockNum > 3) {
-        #ifdef DEBUG
+        #ifdef TEST
             Serial.print("bad relative block number: ");
             Serial.println(blockNum);
             delay(1000);
@@ -311,7 +311,7 @@ uint8_t authenticateBlock(int blockNum, uint8_t keyNum, uint8_t *key) {
     
     // check that keyNum is 0 (key A) or 1 (key B)
     if(keyNum > 1) {
-        #ifdef DEBUG
+        #ifdef TEST
             Serial.println("bad key number.  Must be 0 or 1");
             delay(1000);
         #endif
@@ -320,7 +320,7 @@ uint8_t authenticateBlock(int blockNum, uint8_t keyNum, uint8_t *key) {
     }
     
     // key is valid
-    #ifdef DEBUG
+    #ifdef TEST
         Serial.print("trying to authenticate block number: ");
         Serial.print(absoluteBlockNumber);
         Serial.print(" using key ");
@@ -337,7 +337,7 @@ uint8_t authenticateBlock(int blockNum, uint8_t keyNum, uint8_t *key) {
     // call the authentication library function
     uint8_t success = nfc.mifareclassic_AuthenticateBlock(uid, uidLength, absoluteBlockNumber, keyNum, key);
     
-    #ifdef DEBUG
+    #ifdef TEST
         if(success) {
            Serial.println("authentication succeeded");
         } else {
@@ -372,7 +372,7 @@ uint8_t authenticateBlock(int blockNum, uint8_t keyNum, uint8_t *key) {
     
     // check that the relative block number is 0, 1, 2 only
     if(blockNum > 2) {
-        #ifdef DEBUG
+        #ifdef TEST
             Serial.print("bad relative block number: ");
             Serial.println(blockNum);
             delay(1000);
@@ -391,14 +391,14 @@ uint8_t authenticateBlock(int blockNum, uint8_t keyNum, uint8_t *key) {
         readOK = nfc.mifareclassic_ReadDataBlock(absoluteBlockNumber, data);
         
         if(readOK == true) {
-            #ifdef DEBUG
+            #ifdef TEST
                 Serial.println("\nData read OK\n");
                 delay(1000);
             #endif 
             
             return true;   // successful read
         } else {
-            #ifdef DEBUG
+            #ifdef TEST
                 Serial.println("\nData read failed!\n");
                 delay(1000);
             #endif 
@@ -407,7 +407,7 @@ uint8_t authenticateBlock(int blockNum, uint8_t keyNum, uint8_t *key) {
         }
         
     } else {
-        #ifdef DEBUG
+        #ifdef TEST
             Serial.println("\nBlock authentication failed!\n");
             delay(1000);
         #endif
@@ -441,7 +441,7 @@ uint8_t authenticateBlock(int blockNum, uint8_t keyNum, uint8_t *key) {
     
     // check that the relative block number is 0, 1, 2 only
     if(blockNum > 2) {
-        #ifdef DEBUG
+        #ifdef TEST
             Serial.print("bad relative block number: ");
             Serial.println(blockNum);
             delay(1000);
@@ -460,14 +460,14 @@ uint8_t authenticateBlock(int blockNum, uint8_t keyNum, uint8_t *key) {
         writeOK = nfc.mifareclassic_WriteDataBlock(absoluteBlockNumber, data);
         
         if(writeOK == true) {
-            #ifdef DEBUG
+            #ifdef TEST
                 Serial.println("\nData written OK\n");
                 delay(1000);
             #endif 
             
             return true;   // successful write
         } else {
-            #ifdef DEBUG
+            #ifdef TEST
                 Serial.println("\nData write failed!\n");
                 delay(1000);
             #endif 
@@ -476,7 +476,7 @@ uint8_t authenticateBlock(int blockNum, uint8_t keyNum, uint8_t *key) {
         }
         
     } else {
-        #ifdef DEBUG
+        #ifdef TEST
             Serial.println("\nBlock authentication failed!\n");
             delay(1000);
         #endif
@@ -508,7 +508,7 @@ uint8_t authenticateBlock(int blockNum, uint8_t keyNum, uint8_t *key) {
     //  The sector trailer blcok is relative block 3 of the sector for a Classic 1K card
     uint32_t absoluteBlockNumber = (SECTOR * 4) + 3;
     
-    #ifdef DEBUG
+    #ifdef TEST
         Serial.print("\nChanging keys for sector ");
         Serial.println(SECTOR);
     #endif
@@ -516,7 +516,7 @@ uint8_t authenticateBlock(int blockNum, uint8_t keyNum, uint8_t *key) {
     // we must first authenticate this block -- relative block 3 -- with the old key
    bool success = authenticateBlock(3, oldKeyNum, oldKey);
     if(success == true) {
-        #ifdef DEBUG
+        #ifdef TEST
             Serial.println("authentication with current key successful.");
         #endif  
         
@@ -524,7 +524,7 @@ uint8_t authenticateBlock(int blockNum, uint8_t keyNum, uint8_t *key) {
         // first make the new block
         uint8_t newBlock[16];
         createTrailerBlock(newKeyA, newKeyB, newACB, newBlock);
-        #ifdef DEBUG
+        #ifdef TEST
             Serial.println("New sector trailer block is:");
             nfc.PrintHex(newBlock, 16);
             Serial.println("");
@@ -534,13 +534,13 @@ uint8_t authenticateBlock(int blockNum, uint8_t keyNum, uint8_t *key) {
         uint8_t OK = writeTrailerBlock(SECTOR, newBlock);
         
         if(OK == true) {
-            #ifdef DEBUG
+            #ifdef TEST
                 Serial.println("New sector trailer written successfully!");
             #endif 
             
             return true;
         } else {
-             #ifdef DEBUG
+             #ifdef TEST
                 Serial.println("New sector trailer write failed!");
             #endif 
             
@@ -548,7 +548,7 @@ uint8_t authenticateBlock(int blockNum, uint8_t keyNum, uint8_t *key) {
         }
         
     } else {
-        #ifdef DEBUG
+        #ifdef TEST
             Serial.println("authentication with current key failed.");
         #endif
         
@@ -575,19 +575,19 @@ uint8_t authenticateBlock(int blockNum, uint8_t keyNum, uint8_t *key) {
 uint8_t testCard() {
     bool success = false;
     
-    #ifdef DEBUG
+    #ifdef TEST
         Serial.println("Trying to authenticate with default key A ....");
     #endif
     
     success = authenticateBlock(2, 0, DEFAULT_KEY_A);
     if(success == true)   {   // we can assume a factory fresh card
-        #ifdef DEBUG
+        #ifdef TEST
             Serial.println("default key A authenticated.  Assume factory fresh card ...");
         #endif
         
         return 0;   // code for factory fresh card
     } else {    // not a factory fresh card; reset and test for MN formatted card
-        #ifdef DEBUG
+        #ifdef TEST
             Serial.println("Not a factory fresh card.  Reset and test for MN format .....");
         #endif
         
@@ -595,13 +595,13 @@ uint8_t testCard() {
         nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength);
         success = authenticateBlock(2, 0, MN_SECRET_KEY_A);        
         if(success == true) {   // we can assume an MN formatted card
-            #ifdef DEBUG
+            #ifdef TEST
                 Serial.println("MN secret key A authenticated.  Assume NM formatted card ...");
             #endif
             
             return 1;   // code for MN formatted card
         } else {    // neither test passed - card type is unknown
-            #ifdef DEBUG
+            #ifdef TEST
                 Serial.println("Not an MN formatted card - card type unknown ...");
             #endif
             
@@ -609,3 +609,4 @@ uint8_t testCard() {
         }
     }
 }   // end of testCard()
+        
