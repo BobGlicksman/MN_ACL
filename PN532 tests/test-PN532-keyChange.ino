@@ -17,6 +17,13 @@
  *  Photon D4 not connected but reserved for "RST"
  *  Breakout board jumpers are set for I2C:  SEL 1 is OFF and SEL 0 is ON
  * 
+ * A 16x2 lcd display as also connected to the Photon.  LCD wiring is:
+ *  lcd VSS to GND.  lcd VDD to +3.3 volts. lcd V0 to wiper of a 10K pot.  
+ *    One end of the pot is connected to +3.3. volts and the other end to GND.
+ *  lcd RS to Photon A0. lcd RW to GND. lcd EN to Photon A1. lcd D0 - D3 are left unconnected.
+ *  lcd D4 to Photon A2.  lcd D5 to Photon A3.  lcd D6 to Photon D5.  lcd D7 to Photon D6.
+ *  LCD A to +3.3 volts.  lcd K to GND.
+ * 
  * This program determines if an ISO14443A card presented to the reader is
  * factory fresh or if it has been formatted as Maker Nexus.  Based upon the
  * determined format, the firmware then changes keys to reverse the format;
@@ -32,10 +39,9 @@
  * (c) 2019; Team Practical Projects
  * 
  * Author: Bob Glicksman
- * version 2.1; 6/28/19.
+ * version 2.2; 7/15/19.
  * 
- * v2.1: changed #define DEBUG to #define TEST.  For some reason, commenting
- * out #define DEBUG does not work, but #define TEST does work.
+ * v2.2: added LCD display 
  * 
 ************************************************************************/
 
@@ -43,6 +49,10 @@
 
 // This #include statement was automatically added by the Particle IDE.
 #include <Adafruit_PN532.h>
+
+// This #include statement was automatically added by the Particle IDE.
+#include <LiquidCrystal.h>
+
  
 #define IRQ_PIN D3
 #define RST_PIN D4  // not connected
@@ -82,14 +92,21 @@ uint8_t TEST_PAT_2[] = {255, 254, 253, 252, 251, 250, 249, 248, 247, 246, 245, 2
 // instantiate in I2C mode   
 Adafruit_PN532 nfc(IRQ_PIN, RST_PIN); 
 
+// instatiate the LCD
+LiquidCrystal lcd(A0, A1, A2, A3, D5, D6);
+
  
 void setup() {   
     pinMode(IRQ_PIN, INPUT);     // IRQ pin from PN532\
     pinMode(RST_PIN, OUTPUT);    // reserved for PN532 RST -- not used at this time
     pinMode(LED_PIN, OUTPUT);   // the D7 LED
     
+    lcd.begin(16,2);
+    lcd.clear();
+    
     delay(5000);    // delay to get putty up
     Serial.println("trying to connect ....");
+
     
     nfc.begin(); 
  
@@ -108,6 +125,7 @@ void setup() {
     message += '.';
     message += (versiondata>>8) & 0xFF;
     Serial.println(message);
+    
     
     // now start up the card reader
     nfc.SAMConfig();
@@ -131,6 +149,13 @@ void loop(void) {
     // Wait for an ISO14443A type cards (Mifare, etc.).  When one is found
     // 'uid' will be populated with the UID, and uidLength will indicate
     Serial.println("waiting for ISO14443A card to be presented to the reader ...");
+    
+    lcd.clear();
+    lcd.setCursor(0,0);
+    lcd.print("Place card on");
+    lcd.setCursor(0,1);
+    lcd.print("reader");
+    
     while(!nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
         // JUST WAIT FOR A CARD
     }
@@ -219,7 +244,18 @@ void loop(void) {
         }
     }
     
+    lcd.clear();
+    lcd.setCursor(0,0);
+    if(cardType == 0) {
+       lcd.print("Card is MN");
+    } else {
+       lcd.print("Card is reset");
+    }
+    
     Serial.println("Remove card from reader ...");
+    lcd.setCursor(0,1);
+    lcd.print("Remove card ...");
+    
     while(nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
         // wait for card to be removed
     }
@@ -610,3 +646,4 @@ uint8_t testCard() {
     }
 }   // end of testCard()
         
+
