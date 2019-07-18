@@ -1,0 +1,137 @@
+These are Particle.io webhooks needed by the client firmware.
+Each webhook is a JSON package. To use this, create a webhook then in the webhook editor
+click Custom Template and post one of these packages in the text box. 
+
+Note that private keys, accounts, and passwords have been removed from this
+file.
+
+
+{
+    "event": "ezfClientByMemberNumber",
+    "responseTopic": "{{PARTICLE_DEVICE_ID}}ezfClientByMemberNumber",
+    "url": "https://api.ezfacility.com/v2/clients/membershipNumber={{{memberNumber}}}",
+    "requestType": "GET",
+    "noDefaults": true,
+    "rejectUnauthorized": true,
+    "responseTemplate": "",
+    "headers": {
+        "Authorization": "Bearer {{{access_token}}}",
+        "Accept": "application/json",
+        "ez-page-number": "1"
+    }
+}
+
+{
+    "event": "ezfClientByClientID",
+    "responseTopic": "{{PARTICLE_DEVICE_ID}}ezfClientByClientID",
+    "url": "https://api.ezfacility.com/v2/clients/{{{clientID}}}",
+    "requestType": "GET",
+    "noDefaults": true,
+    "rejectUnauthorized": true,
+    "headers": {
+        "Authorization": "Bearer {{{access_token}}}",
+        "Accept": "application/json",
+        "ez-page-number": "1"
+    }
+}
+
+{
+    "event": "ezfCheckInToken",
+    "responseTopic": "{{PARTICLE_DEVICE_ID}}ezfCheckInToken",
+    "errorResponseTopic": "",
+    "url": "https://api.ezfacility.com/token",
+    "requestType": "POST",
+    "noDefaults": true,
+    "rejectUnauthorized": true,
+    "responseTemplate": "",
+    "headers": {
+        "Authorization": "Basic YOUR AUTH STRING HERE",
+        "Content-type": "application/x-www-form-urlencoded",
+        "Accept": "application/json"
+    },
+    "form": {
+        "grant_type": "password",
+        "username": "YOUR USER",
+        "password": "YOUR PASSWORD",
+        "scope": "realm:tms"
+    }
+}
+
+{
+    "event": "ezfGetStationList",
+    "responseTopic": "{{PARTICLE_DEVICE_ID}}ezfGetStationList",
+    "url": "https://api.ezfacility.com/v2/checkins/stations",
+    "requestType": "GET",
+    "noDefaults": true,
+    "rejectUnauthorized": true,
+    "headers": {
+        "Authorization": "Bearer {{{PARTICLE_EVENT_VALUE}}}",
+        "Accept": "application/json"
+    }
+}
+
+
+{
+    "event": "ezfGetPackagesByClientID",
+    "responseTopic": "{{PARTICLE_DEVICE_ID}}ezfGetPackagesByClientID",
+    "url": "https://api.ezfacility.com/v2/packages/clientID={{{clientID}}}",
+    "requestType": "GET",
+    "noDefaults": true,
+    "rejectUnauthorized": true,
+    "headers": {
+        "Authorization": "Bearer {{{access_token}}}",
+        "Accept": "application/json",
+        "ez-page-number": "1"
+    }
+}
+
+
+{
+    "event": "RFIDWriteKey",
+    "responseTopic": "{{PARTICLE_DEVICE_ID}}RFIDWriteKey",
+    "url": "https://postman-echo.com",
+    "requestType": "GET",
+    "noDefaults": true,
+    "rejectUnauthorized": true,
+    "responseTemplate": "{\"TheRFIDWriteKey\":\"YOUR KEY HERE\"}",
+    "headers": {
+        "Authorization": "Bearer {{{access_token}}}",
+        "Accept": "application/json",
+        "ez-page-number": "1"
+    }
+}
+
+{
+    "event": "RFIDReadKey",
+    "responseTopic": "{{PARTICLE_DEVICE_ID}}RFIDReadKey",
+    "url": "https://postman-echo.com",
+    "requestType": "GET",
+    "noDefaults": true,
+    "rejectUnauthorized": true,
+    "responseTemplate": "TheRFIDReadKey",
+    "headers": {
+        "Authorization": "Bearer {{{access_token}}}",
+        "Accept": "application/json",
+        "ez-page-number": "1"
+    }
+}
+
+{
+    "event": "ezfCheckInClient",
+    "responseTopic": "{{PARTICLE_DEVICE_ID}}ezfCheckInClient",
+    "url": "https://api.ezfacility.com/v2/checkins/clientID/{{{clientID}}}",
+    "requestType": "POST",
+    "noDefaults": true,
+    "rejectUnauthorized": true,
+    "headers": {
+        "Authorization": "Bearer {{{access_token}}}",
+        "Accept": "application/json"
+    },
+    "form": {
+        "CheckInLocationID": "14170",
+        "CheckInStationID": "5487",
+        "BookedSessionsMessage": "junk for now"
+    }
+}
+
+
