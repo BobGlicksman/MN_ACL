@@ -1,3 +1,39 @@
+/*********************************************************************
+ * ezfwebhooktest
+ * 
+ * This program is used to prototype the calls to webhooks needed to 
+ * access and update information in the EZFacility CRM database used
+ * by Maker Nexus. Associated with this file is a file called webhooks.txt
+ * that contains the JSON code needed to recreate each Particle.io
+ * webhook used by this code. Once the webhooks have been created 
+ * you will need to modify the webhook ezfGetCheckInToken to have a valid 
+ * EZFacility authentication token and username/password.
+ * 
+ * The main way to use this program is via the Particle.io console.
+ * 
+ * The primary call-in is the cloud function RFIDCardRead. Call this
+ * with a two value, comma separated string of the form
+ *     clientID,UID
+ * where clientID is a valid clientID and UID is expected to be found 
+ * in the associated record in the EZFacility CRM database. An example is:
+ *     21613660,rt56
+ * Currently the UID is ignored in this code.
+ * 
+ * After calling RFIDCardRead, a series of debug events are published
+ * for your convenience. When the process successfully completes you
+ * can verify the action by going to the EZFacility Admin console and 
+ * running the report Check-in Details.
+ * 
+ * 
+ * (c) 2019; Team Practical Projects
+ * 
+ * Author: Jim Schrempp
+ * version 1; 7/18/19.
+ * 
+************************************************************************/
+
+
+
 //Required to get ArduinoJson to compile
 #define ARDUINOJSON_ENABLE_PROGMEM 0
 #include <ArduinoJson.h>
@@ -53,7 +89,12 @@ String g_cibmnResponseBuffer = "";
 String g_cibcidResponseBuffer = "";
 String g_packagesResponseBuffer = "";
 
-
+String JSONParseError = "";
+String g_recentErrors = "";
+String debug2 = "";
+int debug3 = 0;
+int debug4 = 0;
+int debug5 = 0;
 
 String g_packages = ""; // Not implemented yet
 
@@ -84,20 +125,9 @@ typedef enum eRetStatus {
 } eRetStatus;
 
 
-String JSONParseError = "";
-String g_recentErrors = "";
-String debug2 = "";
-int debug3 = 0;
-int debug4 = 0;
-int debug5 = 0;
-
-
 // ------------------   Forward declarations, when needed
 //
 eRetStatus checkInClientByClientID(int clientID, String cardUID);
-
-
-
 
 
 //-------------- Particle Publish Routines --------------
@@ -116,14 +146,11 @@ int particlePublish (String eventName, String data) {
         
         return 0;
         
-        
     } else {
         
         return 1;
         
     }
-    
-    
 }
 
 String messageBuffer = "";
@@ -155,13 +182,8 @@ void debugEvent (String message) {
             messageBuffer = "";
         
         }
-    
     }
-    
 }
-
-
-
 
 
 
@@ -170,7 +192,6 @@ void debugEvent (String message) {
 int ezfGetCheckInTokenCloud (String data) {
     
     ezfGetCheckInToken();
-
     return 0;
     
 }
@@ -398,7 +419,6 @@ void ezfReceiveClientByClientID (const char *event, const char *data)  {
 // ----------------- GET PACKAGES BY CLIENT ID ---------------
 
 
-
 int ezfGetPackagesByClientID (String notused) {
 
     g_packagesResponseBuffer = "";
@@ -501,7 +521,7 @@ int RFIDCardReadCloud (String data) {
     return 0;
 }
 
-// -----------------------Check In a Client by MemberNum-------------------
+// -----------------------Check In a Client by clientID -------------------
 // Called to checkin a client in EZFacility. Will also update our cloud database
 //
 // This routine should be called from the main look with a clientID of 0
@@ -511,12 +531,13 @@ int RFIDCardReadCloud (String data) {
 //    cardUID - the UID must match that stored in EZFacility for this clientID
 //    
 // Returns:
-//       IN_PROCESS = 1,
-//       COMPLETE_OK = 2,
-//       COMPLETE_FAIL = 3
+//       IN_PROCESS,
+//       COMPLETE_OK,
+//       COMPLETE_FAIL,
+//       IDLE
 //
 // Other actions
-//    If g_authTokenCheckIn is not valid, will get a valid token
+//    If g_authTokenCheckIn is not valid, will get a valid authorization token
 //    g_clientInfo will be valid when this function returns success
 //    If fail, then ????? global variable has human readable information about the failure
 //    
@@ -561,14 +582,7 @@ eRetStatus checkInClientByClientID(int clientID, String cardUID) {
        // debugEvent("SM: starting new checkin request with member number: " + clientID);
         
     }
-    
-//int temp3 = System.freeMemory();
-//debugEvent(String(temp3));   
- 
-// return COMPLETE_OK;   
-    
-    int var;
-    int retCode;
+
       
     switch (state) {
     case 1: 
@@ -670,9 +684,6 @@ eRetStatus checkInClientByClientID(int clientID, String cardUID) {
 
 
 
-
-
-
 void heartbeatLEDs() {
     
     static unsigned long lastBlinkTime = 0;
@@ -687,13 +698,12 @@ void heartbeatLEDs() {
         } else {
             ledState = HIGH;
         }
+        
         digitalWrite(led, ledState);   // Turn ON the LED pins
         digitalWrite(led2, ledState);
-        
-        
+        lastBlinkTime = millis();
+    
     }
-    
-    
     
 }
 
@@ -739,7 +749,6 @@ void setup() {
  
     int success = Particle.function("RFIDCardRead", RFIDCardReadCloud);
  
-  
     success = Particle.function("GetCheckInToken", ezfGetCheckInTokenCloud);
     Particle.subscribe(System.deviceID() + "ezfCheckInToken", ezfReceiveCheckInToken, MY_DEVICES);
   
@@ -814,4 +823,3 @@ void loop() {
     debugEvent("");  // need this to pump the debug event process
 
 }
-
