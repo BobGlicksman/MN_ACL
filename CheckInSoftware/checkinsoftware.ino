@@ -98,8 +98,8 @@
 ************************************************************************/
 
 //#define TEST     // uncomment for debugging mode
-//#define RFID_READER_PRESENT  // uncomment when an RFID reader is connected
-//#define LCD_PRESENT  // uncomment when an LCD display is connected
+#define RFID_READER_PRESENT  // uncomment when an RFID reader is connected
+#define LCD_PRESENT  // uncomment when an LCD display is connected
 
 //Required to get ArduinoJson to compile
 #define ARDUINOJSON_ENABLE_PROGMEM 0
@@ -1223,13 +1223,14 @@ uint8_t testCard() {
 
 eRetStatus readTheCard() {
     
+  /*
     if (g_cardData.clientID != 0) {
         return COMPLETE_OK;
     } else {
         return IDLE;
     }
-    
-       uint8_t success;
+*/
+    uint8_t success;
     uint8_t dataBlock[] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15}; //  16 byte buffer to hold a block of data
     bool flag = false;  // toggle flag for testing purposes
 
@@ -1275,69 +1276,44 @@ eRetStatus readTheCard() {
     // now reverse the keys and try writing/reading some test data
     if(cardType == 0) { // factory fresh card
         // change the keys to make this an MN card
-        bool OK = changeKeys(0, DEFAULT_KEY_A, MN_SECRET_KEY_A, MN_SECRET_KEY_B, MN_SECURE_ACB);
-        
-        if(OK == true) {
-            Serial.println("\nMade fresh card to MN card OK\n");
-            
-            // now write test data to block 0 and 1 of the MN sector using secret key B
-            writeBlockData(TEST_PAT_1, 0,  1, MN_SECRET_KEY_B);
-            writeBlockData(TEST_PAT_2, 1,  1, MN_SECRET_KEY_B);
-            
-            // now read the data back using MN secret key A
-            readBlockData(dataBlock, 0,  0, MN_SECRET_KEY_A);
-            Serial.println("The new block 0 data is:");
-            nfc.PrintHex(dataBlock, 16);
-            Serial.println("");
-            
-            readBlockData(dataBlock, 1,  0, MN_SECRET_KEY_A);
-            Serial.println("The new block 1 data is:");
-            nfc.PrintHex(dataBlock, 16); 
-            
-            Serial.println("");
-             
-            
-        } else {
-            Serial.println("\nFailed to make fresh card into MN card\n");           
-        }
+        // do nothing factory fresh code XXXXX
+
+        Particle.publish("cardtype0", "type 0");
         
     } else  {  // MN formatted card
-        // change the keys to make this a factory fresh card
-        bool OK = changeKeys(1, MN_SECRET_KEY_B, DEFAULT_KEY_A, DEFAULT_KEY_B, DEFAULT_ACB);
-        
-        if(OK == true) {
-            Serial.println("\nMade MN card into fresh card OK\n");
-            
-            uint8_t factoryData[] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
-            
-            // now write factory data to block 0 and 1 of the MN sector using factory key A
-            writeBlockData(factoryData, 0,  0, DEFAULT_KEY_A);
-            writeBlockData(factoryData, 1,  0, DEFAULT_KEY_A);
             
             // now read the data back using factory default key A
-            readBlockData(dataBlock, 0,  0, DEFAULT_KEY_A);
-            Serial.println("The new block 0 data is:");
+            readBlockData(dataBlock, 0,  0, MN_SECRET_KEY_A);
+            Serial.println("The clientID data is:");
             nfc.PrintHex(dataBlock, 16);
             Serial.println("");
             
-            readBlockData(dataBlock, 1,  0, DEFAULT_KEY_A);
-            Serial.println("The new block 1 data is:");
-            nfc.PrintHex(dataBlock, 16); 
+            //readBlockData(dataBlock, 1,  0, MN_SECRET_KEY_A);
+           // Serial.println("The MN UID data is:");
+            //nfc.PrintHex(dataBlock, 16); 
             
             Serial.println("");
             
+            String theClientID = "";
+            for (int i=0; i<16; i++) {
+               theClientID = theClientID + String( (char) dataBlock[i] ); 
+            }
             
-        } else {
-            Serial.println("\nFailed to make fresh card into MN card\n");           
-        }
+            g_cardData.clientID = theClientID.toInt();
+            
+            Particle.publish("cardtypenot0",String(g_cardData.clientID));
+            
+           
+            
+
     }
     
     lcd.clear();
     lcd.setCursor(0,0);
-    if(cardType == 0) {
+    if(cardType == 1) {
        lcd.print("Card is MN");
     } else {
-       lcd.print("Card is reset");
+       lcd.print("Card is not MN");
     }
     
     Serial.println("Remove card from reader ...");
@@ -1347,6 +1323,13 @@ eRetStatus readTheCard() {
     while(nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
         // wait for card to be removed
     }
+    
+    if(cardType == 1) {
+       return COMPLETE_OK;
+    } else {
+       return COMPLETE_FAIL;
+    }
+    
 }
 
 
