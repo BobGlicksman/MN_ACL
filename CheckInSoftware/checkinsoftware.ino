@@ -82,7 +82,6 @@
  * where clientID is a valid clientID and UID is expected to be found 
  * in the associated record in the EZFacility CRM database. An example is:
  *     21613660,rt56
- * These parameters will check-in Jim Schrempp.
  * Currently the UID is ignored in this code.
  * 
  * After calling RFIDCardRead, a series of debug events are published
@@ -118,6 +117,11 @@
 #define IRQ_PIN D3
 #define RST_PIN D4  // not connected
 #define LED_PIN D7
+
+#define READY_LED D4
+#define ADMIT_LED A4
+#define REJECT_LED A5
+#define BUZZER_PIN D2
 
 // Sector to use for testing
 const int SECTOR = 3;	// Sector 0 is manufacturer data and sector 1 is real MN data
@@ -1358,6 +1362,16 @@ void setup() {
     pinMode(led, OUTPUT);
     pinMode(led2, OUTPUT);
     int i = 2;
+    
+    pinMode(READY_LED, OUTPUT);
+    pinMode(ADMIT_LED, OUTPUT);
+    pinMode(REJECT_LED, OUTPUT);
+    pinMode(BUZZER_PIN, OUTPUT);
+    
+    digitalWrite(READY_LED, LOW);
+    digitalWrite(ADMIT_LED, LOW);
+    digitalWrite(REJECT_LED, LOW);
+    digitalWrite(BUZZER_PIN, LOW);
  
 #ifdef LCD_PRESENT
     lcd.begin(16,2);
