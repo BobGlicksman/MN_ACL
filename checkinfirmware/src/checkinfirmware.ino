@@ -90,10 +90,18 @@
  * running the report Check-in Details.
  * 
  * 
+ * PRE RELEASE DEVELOPMENT LOG
+ * 1.01: Added tests to readCard and beep buzzer if read is bad (ie, returns clientID of 0).
+ *       Also changed LCD messages a bit to reflect this new testing.
+ *       readCard no longer blocks waiting for a card presentation; instead it
+ *          returns with IN_PROCESS
+ *       Cleaned up my quick implementation when Bob and I were first testing.
+ * 
  * (c) 2019; Team Practical Projects
  * 
  * Authors: Bob Glicksman, Jim Schrempp
- * version 1; 8/4/2019.
+ * version 1.01; 8/4/2019.
+ * 
  * 
 ************************************************************************/
 
@@ -247,7 +255,6 @@ typedef enum eRetStatus {
 
 // ------------------   Forward declarations, when needed
 //
-eRetStatus checkInClientByClientID(int clientID, String cardUID);
 
 
 //-------------- Particle Publish Routines --------------
@@ -1230,6 +1237,9 @@ eRetStatus readTheCard() {
         return IDLE;
     }
 */
+
+    eRetStatus returnStatus = IN_PROCESS;
+
     uint8_t success;
     uint8_t dataBlock[] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15}; //  16 byte buffer to hold a block of data
     bool flag = false;  // toggle flag for testing purposes
@@ -1245,11 +1255,16 @@ eRetStatus readTheCard() {
     lcd.setCursor(0,1);
     lcd.print("reader");
     
-    while(!nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
-        // JUST WAIT FOR A CARD
+    if(!nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
+        // no card presented so we just exit
+        return IN_PROCESS;
     }
-  
 
+    // we have a card presented
+    g_cardData.clientID = 0;
+    g_cardData.UID = "";
+    lcd.clear();
+  
     #ifdef TEST
         // Display some basic information about the card
         Serial.println("Found an ISO14443A card");
@@ -1260,63 +1275,77 @@ eRetStatus readTheCard() {
         delay(1000);
     #endif
 
-// START THE TESTS HERE
-    
     // test the card to determine its type
     uint8_t cardType = testCard();
+
     Serial.print("\n\nCard is type ");
     if(cardType == 0) {
          Serial.println("factory fresh\n");
     } else if (cardType == 1) {
          Serial.println("Maker Nexus formatted\n");        
     } else {
-        Serial.println("other\n");
+        Serial.println("other card format\n");
     }
 
-    // now reverse the keys and try writing/reading some test data
     if(cardType == 0) { // factory fresh card
-        // change the keys to make this an MN card
-        // do nothing factory fresh code XXXXX
 
-        Particle.publish("cardtype0", "type 0");
-        
+        // do nothing factory fresh code
+        lcd.setCursor(0,0);
+        lcd.print("Card is not MN");
+        returnStatus = COMPLETE_FAIL;
+
     } else  {  // MN formatted card
-            
-            // now read the data back using factory default key A
-            readBlockData(dataBlock, 0,  0, MN_SECRET_KEY_A);
-            Serial.println("The clientID data is:");
-            nfc.PrintHex(dataBlock, 16);
-            Serial.println("");
-            
-            //readBlockData(dataBlock, 1,  0, MN_SECRET_KEY_A);
-           // Serial.println("The MN UID data is:");
-            //nfc.PrintHex(dataBlock, 16); 
-            
-            Serial.println("");
-            
-            String theClientID = "";
-            for (int i=0; i<16; i++) {
-               theClientID = theClientID + String( (char) dataBlock[i] ); 
-            }
-            
-            g_cardData.clientID = theClientID.toInt();
-            
-            Particle.publish("cardtypenot0",String(g_cardData.clientID));
-            
-           
-            
 
-    }
-    
-    lcd.clear();
-    lcd.setCursor(0,0);
-    if(cardType == 1) {
-       lcd.print("Card is MN");
-    } else {
-       lcd.print("Card is not MN");
+        // now read the data using MN Key and store in g_cardData
+        readBlockData(dataBlock, 0,  0, MN_SECRET_KEY_A);
+        Serial.println("The clientID data is:");
+        nfc.PrintHex(dataBlock, 16);
+        Serial.println("");
+
+        String theClientID = "";
+        for (int i=0; i<16; i++) {
+            theClientID = theClientID + String( (char) dataBlock[i] ); 
+        }
+        
+        g_cardData.clientID = theClientID.toInt();
+
+        // read UID and store in g_cardData
+        readBlockData(dataBlock, 1,  0, MN_SECRET_KEY_A);
+        Serial.println("The MN UID data is:");
+        nfc.PrintHex(dataBlock, 16); 
+
+        String theUID = "";
+        for (int i=15; i>-1; i--) {
+            if (dataBlock[i] != 0) {
+                theUID = String( (char) dataBlock[i] ) + theUID; 
+            } else {
+                break; // we reached a null data character;
+            }
+        }
+        
+        g_cardData.UID = theUID;
+        
+        // display the status to the user
+        String msg = "";
+        if (g_cardData.clientID == 0 ) {
+            returnStatus = COMPLETE_FAIL;
+            msg = "Card read failed";
+            tone(BUZZER_PIN,2000,20);
+            delay(100);
+            tone(BUZZER_PIN,2000,20);
+        } else {
+            returnStatus = COMPLETE_OK;
+            msg = "CID:" + String(g_cardData.clientID);
+        }
+        lcd.setCursor(0,0);
+        lcd.print(msg);
+        Serial.println(msg);
+        Serial.println("");  
+
     }
     
     Serial.println("Remove card from reader ...");
+
     lcd.setCursor(0,1);
     lcd.print("Remove card ...");
     
@@ -1324,11 +1353,7 @@ eRetStatus readTheCard() {
         // wait for card to be removed
     }
     
-    if(cardType == 1) {
-       return COMPLETE_OK;
-    } else {
-       return COMPLETE_FAIL;
-    }
+    return returnStatus;
     
 }
 
@@ -1361,14 +1386,16 @@ void setup() {
     lcd.clear();
 #endif
     
+#ifdef test
+    delay(5000);    // delay to get putty up
+    Serial.println("trying to connect ....");
+#endif
+
 #ifdef RFID_READER_PRESENT 
     // ------ RFID SetUp
     pinMode(IRQ_PIN, INPUT);     // IRQ pin from PN532\
     pinMode(RST_PIN, OUTPUT);    // reserved for PN532 RST -- not used at this time
     pinMode(LED_PIN, OUTPUT);   // the D7 LED
-    
-    delay(5000);    // delay to get putty up
-    Serial.println("trying to connect ....");
     
     nfc.begin(); 
  
