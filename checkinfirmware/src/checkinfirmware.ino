@@ -1191,12 +1191,11 @@ eRetStatus readTheCard() {
         if (g_cardData.clientID == 0 ) {
             returnStatus = COMPLETE_FAIL;
             msg = "Card read failed";
-            tone(BUZZER_PIN,2000,20);
-            delay(100);
-            tone(BUZZER_PIN,2000,20);
+            tone(BUZZER_PIN,250,500);
         } else {
             returnStatus = COMPLETE_OK;
             msg = "CID:" + String(g_cardData.clientID);
+            tone(BUZZER_PIN,750,50); //good
         }
         lcd.setCursor(0,0);
         lcd.print(msg);
@@ -1244,9 +1243,13 @@ void setup() {
 #ifdef LCD_PRESENT
     lcd.begin(16,2);
     lcd.clear();
+    lcd.setCursor(0,0);
+    lcd.print("MN Checkin");
+    lcd.setCursor(0,1);
+    lcd.print("StartUp");
 #endif
     
-#ifdef test
+#ifdef TEST
     delay(5000);    // delay to get putty up
     Serial.println("trying to connect ....");
 #endif
@@ -1317,7 +1320,18 @@ void setup() {
     success = Particle.function("PackagesByClientID",ezfGetPackagesByClientID);
     Particle.subscribe(System.deviceID() + "ezfGetPackagesByClientID",ezfReceivePackagesByClientID);
 
+#ifdef LCD_PRESENT
+    lcd.clear();
+    lcd.setCursor(0,0);
+    lcd.print("MN Checkin");
+    lcd.setCursor(0,1);
+    lcd.print("Initialized");
+#endif
 
+    // Signal ready to go
+    tone(BUZZER_PIN,750,50); //good
+    delay(100);
+    tone(BUZZER_PIN,750,50); //good
 
 }
 
@@ -1408,7 +1422,9 @@ void loop() {
             debugEvent ("SM: now checkin client");
             // tell EZF to check someone in
             ezfCheckInClient(String(g_clientInfo.clientID));
-            
+            tone(BUZZER_PIN,750,50); //good
+            delay(100);
+            tone(BUZZER_PIN,750,50);
             mainloopState = mlsIDLE;
         
             }
