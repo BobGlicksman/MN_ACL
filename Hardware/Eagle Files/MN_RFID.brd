@@ -195,6 +195,15 @@ Argon/Xenon</text>
 <wire x1="82.8675" y1="27.94" x2="82.8675" y2="22.86" width="0.1524" layer="21"/>
 <wire x1="82.8675" y1="22.86" x2="51.435" y2="22.86" width="0.1524" layer="21"/>
 <wire x1="51.435" y1="22.86" x2="51.435" y2="27.94" width="0.1524" layer="21"/>
+<text x="65.7225" y="77.1525" size="1.27" layer="21">USB</text>
+<text x="28.2575" y="63.5" size="1.27" layer="21">BUZZER</text>
+<text x="33.655" y="34.29" size="1.016" layer="21" rot="R90">470</text>
+<text x="33.655" y="22.86" size="1.016" layer="21" rot="R90">470</text>
+<text x="84.455" y="63.5" size="1.016" layer="21" rot="R90">4.7k</text>
+<text x="88.265" y="63.5" size="1.016" layer="21" rot="R90">4.7k</text>
+<text x="47.625" y="54.9275" size="1.27" layer="21" rot="R90">74AHCT125N</text>
+<text x="33.655" y="45.72" size="1.016" layer="21" rot="R90">470</text>
+<text x="31.75" y="55.245" size="1.016" layer="21">4.7k</text>
 </plain>
 <libraries>
 <library name="Particle-Devices" urn="urn:adsk.eagle:library:5952892">
@@ -976,7 +985,7 @@ design rules under a new name.</description>
 <attribute name="NAME" x="36.195" y="74.295" size="1.27" layer="25" ratio="10"/>
 <attribute name="OC_FARNELL" value="unknown" x="31.75" y="67.31" size="1.778" layer="27" display="off"/>
 <attribute name="OC_NEWARK" value="unknown" x="31.75" y="67.31" size="1.778" layer="27" display="off"/>
-<attribute name="VALUE" x="27.305" y="63.5" size="1.27" layer="27" ratio="10"/>
+<attribute name="VALUE" x="28.8925" y="61.9125" size="1.27" layer="27" ratio="10"/>
 </element>
 <element name="IC1" library="74xx-eu" library_urn="urn:adsk.eagle:library:85" package="DIL14" package3d_urn="urn:adsk.eagle:package:16407/2" value="74HCT125N" x="46.99" y="59.69" smashed="yes" rot="R270">
 <attribute name="NAME" x="43.942" y="68.961" size="1.27" layer="25" ratio="10"/>
