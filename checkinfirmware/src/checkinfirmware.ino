@@ -99,11 +99,12 @@
  * 1.02: Realized that having a state machine in the checkin code was confusing and not
  *          the way to go. Changed to have the only state machine in the main loop and
  *          now the code is much cleaner and easier to read. The states are all explicit.
+ * 1.03: Added some buzzer feedback for user and some LCD messages.
  * 
  * (c) 2019; Team Practical Projects
  * 
  * Authors: Bob Glicksman, Jim Schrempp
- * version 1.02; 8/4/2019.
+ * version 1.03; 8/4/2019.
  * 
  * 
 ************************************************************************/
