@@ -90,10 +90,22 @@
  * running the report Check-in Details.
  * 
  * 
+ * PRE RELEASE DEVELOPMENT LOG
+ * 1.01: Added tests to readCard and beep buzzer if read is bad (ie, returns clientID of 0).
+ *       Also changed LCD messages a bit to reflect this new testing.
+ *       readCard no longer blocks waiting for a card presentation; instead it
+ *          returns with IN_PROCESS
+ *       Cleaned up my quick implementation when Bob and I were first testing.
+ * 1.02: Realized that having a state machine in the checkin code was confusing and not
+ *          the way to go. Changed to have the only state machine in the main loop and
+ *          now the code is much cleaner and easier to read. The states are all explicit.
+ * 1.03: Added some buzzer feedback for user and some LCD messages.
+ * 
  * (c) 2019; Team Practical Projects
  * 
  * Authors: Bob Glicksman, Jim Schrempp
- * version 1; 8/4/2019.
+ * version 1.03; 8/4/2019.
+ * 
  * 
 ************************************************************************/
 
@@ -195,7 +207,6 @@ char * strcat_safe( const char *str1, const char *str2 )
 }  
   
 
-
 // Define the pins we're going to call pinMode on
 
 int led = D0;  // You'll need to wire an LED to this one to see it blink.
@@ -247,7 +258,6 @@ typedef enum eRetStatus {
 
 // ------------------   Forward declarations, when needed
 //
-eRetStatus checkInClientByClientID(int clientID, String cardUID);
 
 
 //-------------- Particle Publish Routines --------------
@@ -442,6 +452,7 @@ int ezfClientByMemberNumber (String data) {
     serializeJson(docJSON, output);
     
     int rtnCode = Particle.publish("ezfClientByMemberNumber",output );
+    if (rtnCode){} //XXX
     
     return g_clientInfo.memberNumber.toInt();
 }
@@ -641,168 +652,26 @@ int RFIDCardReadCloud (String data) {
     return 0;
 }
 
-// -----------------------Check In a Client by clientID -------------------
-// Called to checkin a client in EZFacility. Will also update our cloud database
-//
-// This routine should be called from the main look with a clientID of 0
-//
-// Pass in memberNumber
-//    clientID - the key used to lookup a member in EZFacility
-//    cardUID - the UID must match that stored in EZFacility for this clientID
+// ------------ isClientOkToCheckIn --------------
+//  This routine is where we check to see if we should allow
+//  the client to check in or if we should deny them. This
+//  routine will use g_clientInfo to make the determination.
 //    
-// Returns:
-//       IN_PROCESS,
-//       COMPLETE_OK,
-//       COMPLETE_FAIL,
-//       IDLE
+//  Returns True if client is good and false if not
 //
-// Other actions
-//    If g_authTokenCheckIn is not valid, will get a valid authorization token
-//    g_clientInfo will be valid when this function returns success
-//    If fail, then ????? global variable has human readable information about the failure
-//    
+bool isClientOkToCheckIn (){
 
-eRetStatus checkInClientByClientID(int clientID, String cardUID) {
-    
-    static int state = -1;
-    static unsigned long startOfRequest = -1;
-    static int clientIDToUse = 0;
-
-
-    if ( (state == -1) && (clientID == 0) ) {
-        // we are not in process and we were not passed a memberNum
-        // so quick return
-        return IDLE;
+    // Test for a good account status
+    bool allowIn = false;
+    if (g_clientInfo.contractStatus.length() > 0) {
+        if (g_clientInfo.contractStatus.indexOf("Active") >= 0) {   
+            allowIn = true; 
+        }
     }
 
-    if ( (state > -1) && (clientID > 0) ) {
-        // We were in process and called with a member number
-        // abort and go idle
-        debugEvent ("SM: new checkin request while in process.  member number: " + clientID);
-        state = -1;
-        return COMPLETE_FAIL;
-    
-    } 
-    
-    if (state > -1) {
-        if (millis() - startOfRequest > 15000) {
-            // this process has taken too long. Abort it. And go to Idle.
-            state = -1;
-            debugEvent ("SM: error checkInClientByMemberNum took over 15 seconds");
-            return COMPLETE_FAIL;
-        }
-        
-    }
-    
-    if ( (state == -1) && (clientID > 0)) {
-        // This is a new request
-        state = 1;
-        startOfRequest = millis();
-        clientIDToUse = clientID; // keep this in a local static variable
-       // debugEvent("SM: starting new checkin request with member number: " + clientID);
-        
-    }
+    return allowIn;
 
-      
-    switch (state) {
-    case 1: 
-        {
-       // debugEvent ("SM: request token");
-        
-        // request a good token
-        ezfGetCheckInTokenCloud("junk");
-        
-        state++;;
-        break;
-        }
-    case 2:
-        // waiting for a good token
-        if (g_authTokenCheckIn.token.length() == 0) {
-            break;
-        }
-        
-       // debugEvent ("SM: got token: " + g_authTokenCheckIn.token);
-        
-        // ask for client details
-        ezfClientByClientID(clientIDToUse);
-       
-        state++;
-        break;
-    case 3: {
-    
-            // waiting for client details
-            if ( !g_clientInfo.isValid) {
-                break;
-            }
-      
-            debugEvent ( "step 3");
-       
-            // Test for a good account status
-            bool allowIn = false;
-            if (g_clientInfo.contractStatus.length() > 0) {
-                if (g_clientInfo.contractStatus.indexOf("Active") >= 0) {   
-                   allowIn = true; 
-                }
-            }
-            
-            // If we have good status, checkin the client
-            if ( !allowIn ) {
-                //client account status is bad
-                state = -1;
-                debugEvent("contract status is not good."); 
-
-                if (g_clientInfo.contractStatus.length() >= 1) {
-                    debugEvent("status: " + g_clientInfo.contractStatus);
-                }  else {
-                    debugEvent("Status is null");
-                }
-                
-            } else {
-            
-                debugEvent ("SM: now checkin client");
-                // tell EZF to check someone in
-                ezfCheckInClient(String(g_clientInfo.clientID));
-                
-                state++;
-            
-            }
-          
-            break;
-        }
-    case 4:
-        // waiting for check in to complete
-        debugEvent ("SM: checkin complete");
-        debugEvent ("SM: step 4");
-        // log the check in to the google database
-        state++;
-        break;
-    case 5:
-        // wait for google database to complete
-        debugEvent ("SM: step 5");
-        // report that all is done
-        state++;
-        break;
-    case 6:
-        // we are done
-        state = -1;
-        break;
-    default:
-        // We have some error
-        debugEvent ("SM: default. state: " + String(state));
-        return COMPLETE_FAIL;
-        break;
-    }
-    
-    debugEvent("SM: exit with state: " + String(state));
-    if (state == -1) {
-        return COMPLETE_OK;
-    } else {
-        return IN_PROCESS;
-    } 
-    
 }
-
-
 
 void heartbeatLEDs() {
     
@@ -1107,7 +976,7 @@ uint8_t authenticateBlock(int blockNum, uint8_t keyNum, uint8_t *key) {
     
     // compute the absolute block number of the sector trailer.
     //  The sector trailer blcok is relative block 3 of the sector for a Classic 1K card
-    uint32_t absoluteBlockNumber = (SECTOR * 4) + 3;
+    //uint32_t absoluteBlockNumber = (SECTOR * 4) + 3;
     
     #ifdef TEST
         Serial.print("\nChanging keys for sector ");
@@ -1230,9 +1099,12 @@ eRetStatus readTheCard() {
         return IDLE;
     }
 */
-    uint8_t success;
+
+    eRetStatus returnStatus = IN_PROCESS;
+
+    //uint8_t success;
     uint8_t dataBlock[] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15}; //  16 byte buffer to hold a block of data
-    bool flag = false;  // toggle flag for testing purposes
+    //bool flag = false;  // toggle flag for testing purposes
 
     
     // Wait for an ISO14443A type cards (Mifare, etc.).  When one is found
@@ -1245,11 +1117,16 @@ eRetStatus readTheCard() {
     lcd.setCursor(0,1);
     lcd.print("reader");
     
-    while(!nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
-        // JUST WAIT FOR A CARD
+    if(!nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
+        // no card presented so we just exit
+        return IN_PROCESS;
     }
-  
 
+    // we have a card presented
+    g_cardData.clientID = 0;
+    g_cardData.UID = "";
+    lcd.clear();
+  
     #ifdef TEST
         // Display some basic information about the card
         Serial.println("Found an ISO14443A card");
@@ -1260,63 +1137,76 @@ eRetStatus readTheCard() {
         delay(1000);
     #endif
 
-// START THE TESTS HERE
-    
     // test the card to determine its type
     uint8_t cardType = testCard();
+
     Serial.print("\n\nCard is type ");
     if(cardType == 0) {
          Serial.println("factory fresh\n");
     } else if (cardType == 1) {
          Serial.println("Maker Nexus formatted\n");        
     } else {
-        Serial.println("other\n");
+        Serial.println("other card format\n");
     }
 
-    // now reverse the keys and try writing/reading some test data
     if(cardType == 0) { // factory fresh card
-        // change the keys to make this an MN card
-        // do nothing factory fresh code XXXXX
 
-        Particle.publish("cardtype0", "type 0");
-        
+        // do nothing factory fresh code
+        lcd.setCursor(0,0);
+        lcd.print("Card is not MN");
+        returnStatus = COMPLETE_FAIL;
+
     } else  {  // MN formatted card
-            
-            // now read the data back using factory default key A
-            readBlockData(dataBlock, 0,  0, MN_SECRET_KEY_A);
-            Serial.println("The clientID data is:");
-            nfc.PrintHex(dataBlock, 16);
-            Serial.println("");
-            
-            //readBlockData(dataBlock, 1,  0, MN_SECRET_KEY_A);
-           // Serial.println("The MN UID data is:");
-            //nfc.PrintHex(dataBlock, 16); 
-            
-            Serial.println("");
-            
-            String theClientID = "";
-            for (int i=0; i<16; i++) {
-               theClientID = theClientID + String( (char) dataBlock[i] ); 
-            }
-            
-            g_cardData.clientID = theClientID.toInt();
-            
-            Particle.publish("cardtypenot0",String(g_cardData.clientID));
-            
-           
-            
 
-    }
-    
-    lcd.clear();
-    lcd.setCursor(0,0);
-    if(cardType == 1) {
-       lcd.print("Card is MN");
-    } else {
-       lcd.print("Card is not MN");
+        // now read the data using MN Key and store in g_cardData
+        readBlockData(dataBlock, 0,  0, MN_SECRET_KEY_A);
+        Serial.println("The clientID data is:");
+        nfc.PrintHex(dataBlock, 16);
+        Serial.println("");
+
+        String theClientID = "";
+        for (int i=0; i<16; i++) {
+            theClientID = theClientID + String( (char) dataBlock[i] ); 
+        }
+        
+        g_cardData.clientID = theClientID.toInt();
+
+        // read UID and store in g_cardData
+        readBlockData(dataBlock, 1,  0, MN_SECRET_KEY_A);
+        Serial.println("The MN UID data is:");
+        nfc.PrintHex(dataBlock, 16); 
+
+        String theUID = "";
+        for (int i=15; i>-1; i--) {
+            if (dataBlock[i] != 0) {
+                theUID = String( (char) dataBlock[i] ) + theUID; 
+            } else {
+                break; // we reached a null data character;
+            }
+        }
+        
+        g_cardData.UID = theUID;
+        
+        // display the status to the user
+        String msg = "";
+        if (g_cardData.clientID == 0 ) {
+            returnStatus = COMPLETE_FAIL;
+            msg = "Card read failed";
+            tone(BUZZER_PIN,250,500);
+        } else {
+            returnStatus = COMPLETE_OK;
+            msg = "CID:" + String(g_cardData.clientID);
+            tone(BUZZER_PIN,750,50); //good
+        }
+        lcd.setCursor(0,0);
+        lcd.print(msg);
+        Serial.println(msg);
+        Serial.println("");  
+
     }
     
     Serial.println("Remove card from reader ...");
+
     lcd.setCursor(0,1);
     lcd.print("Remove card ...");
     
@@ -1324,11 +1214,7 @@ eRetStatus readTheCard() {
         // wait for card to be removed
     }
     
-    if(cardType == 1) {
-       return COMPLETE_OK;
-    } else {
-       return COMPLETE_FAIL;
-    }
+    return returnStatus;
     
 }
 
@@ -1344,7 +1230,6 @@ void setup() {
   // It's important you do this here, inside the setup() function rather than outside it or in the loop function.
     pinMode(led, OUTPUT);
     pinMode(led2, OUTPUT);
-    int i = 2;
     
     pinMode(READY_LED, OUTPUT);
     pinMode(ADMIT_LED, OUTPUT);
@@ -1359,16 +1244,22 @@ void setup() {
 #ifdef LCD_PRESENT
     lcd.begin(16,2);
     lcd.clear();
+    lcd.setCursor(0,0);
+    lcd.print("MN Checkin");
+    lcd.setCursor(0,1);
+    lcd.print("StartUp");
 #endif
     
-#ifdef RFID_READER_PRESENT 
-    // ------ RFID SetUp
-    pinMode(IRQ_PIN, INPUT);     // IRQ pin from PN532\
-    pinMode(RST_PIN, OUTPUT);    // reserved for PN532 RST -- not used at this time
-    pinMode(LED_PIN, OUTPUT);   // the D7 LED
-    
+#ifdef TEST
     delay(5000);    // delay to get putty up
     Serial.println("trying to connect ....");
+#endif
+
+#ifdef RFID_READER_PRESENT 
+    // ------ RFID SetUp
+    pinMode(IRQ_PIN, INPUT);     // IRQ pin from PN532
+    //pinMode(RST_PIN, OUTPUT);    // reserved for PN532 RST -- not used at this time
+    pinMode(LED_PIN, OUTPUT);   // the D7 LED
     
     nfc.begin(); 
  
@@ -1416,7 +1307,8 @@ void setup() {
     Particle.variable ("debug4", debug4);
  
     int success = Particle.function("RFIDCardRead", RFIDCardReadCloud);
- 
+    if (success) {}
+
     success = Particle.function("GetCheckInToken", ezfGetCheckInTokenCloud);
     Particle.subscribe(System.deviceID() + "ezfCheckInToken", ezfReceiveCheckInToken, MY_DEVICES);
   
@@ -1429,7 +1321,18 @@ void setup() {
     success = Particle.function("PackagesByClientID",ezfGetPackagesByClientID);
     Particle.subscribe(System.deviceID() + "ezfGetPackagesByClientID",ezfReceivePackagesByClientID);
 
+#ifdef LCD_PRESENT
+    lcd.clear();
+    lcd.setCursor(0,0);
+    lcd.print("MN Checkin");
+    lcd.setCursor(0,1);
+    lcd.print("Initialized");
+#endif
 
+    // Signal ready to go
+    tone(BUZZER_PIN,750,50); //good
+    delay(100);
+    tone(BUZZER_PIN,750,50); //good
 
 }
 
@@ -1440,44 +1343,92 @@ void setup() {
 // Make sure none of your code delays or blocks for too long (like more than 5 seconds), or weird things can happen.
 void loop() {
     
-    enum mlState {mlsIDLE, mlsCARDPRESENT, mlsCARDOK, mlsCHECKINGIN, mlsERROR};
+    enum mlState {mlsIDLE, mlsCARDPRESENT, mlsCARDOK, mlsREQUESTTOKEN, mlsWAITFORTOKEN, mlsASKFORCLIENTINFO, mlsWAITFORCLIENTINFO, mlsCHECKINGIN, mlsERROR};
     
     static mlState mainloopState = mlsIDLE;
+    static unsigned long processStartMilliseconds = 0; 
     
     switch (mainloopState) {
     case mlsIDLE: {
-        
         eRetStatus retStatus = readTheCard();
         if (retStatus == COMPLETE_OK) {
             // move to the next step
-            mainloopState = mlsCHECKINGIN;
+            mainloopState = mlsREQUESTTOKEN;
+            }
+        break;
+    }
+    case mlsREQUESTTOKEN: 
+        // request a good token from ezf
+        ezfGetCheckInTokenCloud("junk");
+        processStartMilliseconds = millis();
+        mainloopState = mlsWAITFORTOKEN;
+        break;
+
+    case mlsWAITFORTOKEN:
+        // waiting for a good token from ezf
+        if (g_authTokenCheckIn.token.length() != 0) {
+            // we have a token
+            mainloopState = mlsASKFORCLIENTINFO;
+        } else {
+            // timer to limit this state
+            if (millis() - processStartMilliseconds > 15000) {
+                debugEvent("took too long to get token, checkin aborts");
+                processStartMilliseconds = 0;
+                mainloopState = mlsIDLE;
+            }
+        //Otherwise we stay in this state
         }
+        break;
+    case mlsASKFORCLIENTINFO:  {
+
+        // ask for client details
+        ezfClientByClientID(g_cardData.clientID);
+        processStartMilliseconds = millis();
+        mainloopState = mlsWAITFORCLIENTINFO;
+        break;
+        
+    }
+    case mlsWAITFORCLIENTINFO: {
+  
+        if ( g_clientInfo.isValid ) {
+            // got client data, let's move on
+            mainloopState = mlsCHECKINGIN;
+        } else {
+            // timer to limit this state
+            if (millis() - processStartMilliseconds > 15000) {
+                debugEvent("15 second timer exeeded, checkin aborts");
+                processStartMilliseconds = 0;
+                mainloopState = mlsIDLE;
+            }
+        } // Otherwise we stay in this state
         break;
     }
     case mlsCHECKINGIN: {
-        
-        eRetStatus retStatus = checkInClientByClientID(0,""); 
-        debugEvent("state machine returned status: " + String(retStatus));
-        
-        switch (retStatus) {
-        case IN_PROCESS:
-            break;
-        case IDLE: {
-            
-            eRetStatus retStatus = checkInClientByClientID(g_cardData.clientID, g_cardData.UID); 
-            // xxx we should check the return status here to make sure the checkin took off
-            g_cardData.clientID = 0;
-            g_cardData.UID = "";
-            break;
-        }
-        case COMPLETE_OK:
+
+        // If the client meets all critera, check them in
+        bool allowIn = isClientOkToCheckIn();
+        if ( !allowIn ) {
+            //client account status is bad
             mainloopState = mlsIDLE;
-            break;
-        case COMPLETE_FAIL:
-            break;
-        } // switch (retStatus)
+            debugEvent("contract status is not good."); 
+
+            if (g_clientInfo.contractStatus.length() >= 1) {
+                debugEvent("status: " + g_clientInfo.contractStatus);
+            }  else {
+                debugEvent("Status is null");
+            }
+            
+        } else {
         
-        break;
+            debugEvent ("SM: now checkin client");
+            // tell EZF to check someone in
+            ezfCheckInClient(String(g_clientInfo.clientID));
+            tone(BUZZER_PIN,750,50); //good
+            delay(100);
+            tone(BUZZER_PIN,750,50);
+            mainloopState = mlsIDLE;
+        
+            }
     }
     case mlsERROR:
         break;
