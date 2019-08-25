@@ -213,6 +213,7 @@ struct struct_authTokenCheckIn {
 } g_authTokenCheckIn;
 
 struct  struct_clientInfo {  // holds info on the current client
+    String name = "";
     bool isValid = false;        // when true this sturcture has good data in it
     int clientID = 0;           // numeric value assigned by EZFacility. Guaranteed to be unique
     String RFIDCardKey = "";    // string stored in EZFacility "custom fields". We may want to change this name
@@ -417,10 +418,12 @@ void ezfReceiveCheckInToken (const char *event, const char *data)  {
 
 void clearClientInfo() {
     
+    g_clientInfo.name = "";
     g_clientInfo.isValid = false;
     g_clientInfo.clientID = 0;
     g_clientInfo.RFIDCardKey = "";
     g_clientInfo.contractStatus = "";
+    g_clientInfo.memberNumber = "";
     
 }
 
@@ -457,6 +460,10 @@ int parseClientInfoJSON (String data) {
             if (fieldName.indexOf("RFID Card UID") >= 0) {
                g_clientInfo.RFIDCardKey = root_0["CustomFields"][0]["Value"].as<char*>(); 
             }
+
+            g_clientInfo.name = String(root_0["FirstName"].as<char*>()) + " " + String(root_0["LastName"].as<char*>());
+
+            g_clientInfo.memberNumber = String(root_0["MembershipNumber"].as<char*>());
             
             g_clientInfo.isValid = true;
             
@@ -588,7 +595,11 @@ void ezfReceiveClientByClientID (const char *event, const char *data)  {
         if (fieldName.indexOf("RFID Card UID") >= 0) {
             g_clientInfo.RFIDCardKey = docJSON["CustomFields"][0]["Value"].as<char*>(); 
         }
-            
+        
+        g_clientInfo.name = String(docJSON["FirstName"].as<char*>()) + " " + String(docJSON["LastName"].as<char*>());
+
+        g_clientInfo.memberNumber = String(docJSON["MembershipNumber"].as<char*>());  
+
         g_clientInfo.isValid = true;
         
     }
@@ -1454,9 +1465,11 @@ void loop() {
             debugEvent ("SM: now checkin client");
             // tell EZF to check someone in
             ezfCheckInClient(String(g_clientInfo.clientID));
+            writeToLCD("Welcome",g_clientInfo.name);
             tone(BUZZER_PIN,750,50); //good
             delay(100);
             tone(BUZZER_PIN,750,50);
+            delay(1000);
             mainloopState = mlsIDLE;
         
             }
