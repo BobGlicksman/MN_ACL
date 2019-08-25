@@ -105,6 +105,10 @@
  * 
  * Authors: Bob Glicksman, Jim Schrempp
  * version 1.03; 8/4/2019.
+ * version 1.04: 8/25/2019 
+ *      Moved all LCD writes to a common routine
+ *      Added fimware update begin event so LCD can be cleared
+ *               
  * 
  * 
 ************************************************************************/
@@ -287,7 +291,21 @@ void writeToLCD(String line1, String line2) {
 #endif
 }
 
-
+// Called by Particle OS when a firmware update is about to begin
+void firmwareupdatehandler(system_event_t event, int data) {
+    switch (data) {
+    case firmware_update_begin:
+        writeToLCD("Firmware update","in progress");
+        // xxx should turn off all LEDs
+        break;
+    case firmware_update_complete:
+        //writeToLCD("Firmeware update","complete");  // xxx this didn't get called
+        break;
+    case firmware_update_failed:
+        //writeToLCD("Firmware update","failed");  // xxx this is called even on successful update??
+        break;
+    }
+}
 
 //-------------- Particle Publish Routines --------------
 // These routines are used to space out publish events to avoid being throttled.
@@ -1339,6 +1357,8 @@ void setup() {
     Particle.subscribe(System.deviceID() + "ezfGetPackagesByClientID",ezfReceivePackagesByClientID);
 
     writeToLCD("MN Checkin","Initialized");
+
+    System.on(firmware_update, firmwareupdatehandler);
 
     // Signal ready to go
     tone(BUZZER_PIN,750,50); //good
