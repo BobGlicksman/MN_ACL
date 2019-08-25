@@ -108,7 +108,10 @@
  * version 1.04: 8/25/2019 
  *      Moved all LCD writes to a common routine
  *      Added fimware update begin event so LCD can be cleared
- *               
+ *      LED actions now in placement
+ *      LCD messages when errors occur
+ *      More beeps in places with errors
+ *      Member name now displayed on successful checkin         
  * 
  * 
 ************************************************************************/
@@ -132,9 +135,9 @@
 
 #define IRQ_PIN D3
 #define RST_PIN D4  // not connected
-#define LED_PIN D7
+#define ONBOARD_LED_PIN D7
 
-#define READY_LED D4
+#define READY_LED D4   // xxx second definition of this pin...
 #define ADMIT_LED A4
 #define REJECT_LED A5
 #define BUZZER_PIN D2
@@ -297,7 +300,9 @@ void firmwareupdatehandler(system_event_t event, int data) {
     switch (data) {
     case firmware_update_begin:
         writeToLCD("Firmware update","in progress");
-        // xxx should turn off all LEDs
+        digitalWrite(READY_LED,LOW);
+        digitalWrite(ADMIT_LED,LOW);
+        digitalWrite(REJECT_LED,HIGH);
         break;
     case firmware_update_complete:
         //writeToLCD("Firmeware update","complete");  // xxx this didn't get called
@@ -307,6 +312,45 @@ void firmwareupdatehandler(system_event_t event, int data) {
         break;
     }
 }
+
+
+void heartbeatLEDs() {
+    
+    static unsigned long lastBlinkTimeD7 = 0;
+    static int ledState = HIGH;
+    const int blinkInterval = 500;  // in milliseconds
+    
+    
+    if (millis() - lastBlinkTimeD7 > blinkInterval) {
+        
+        if (ledState == HIGH) {
+            ledState = LOW;
+        } else {
+            ledState = HIGH;
+        }
+        
+        digitalWrite(led, ledState);   // Turn ON the LED pins
+        digitalWrite(led2, ledState);
+        lastBlinkTimeD7 = millis();
+    
+    }
+    
+}
+
+void buzzerBadBeep() {
+    tone(BUZZER_PIN,250,500);
+}
+
+void buzzerGoodBeep(){
+    tone(BUZZER_PIN,750,50); //good
+}
+
+void buzzerGoodBeeps2(){
+    tone(BUZZER_PIN,750,50); //good
+    delay(100);
+    tone(BUZZER_PIN,750,50);
+}
+
 
 //-------------- Particle Publish Routines --------------
 // These routines are used to space out publish events to avoid being throttled.
@@ -731,28 +775,6 @@ bool isClientOkToCheckIn (){
 
 }
 
-void heartbeatLEDs() {
-    
-    static unsigned long lastBlinkTime = 0;
-    static int ledState = HIGH;
-    const int blinkInterval = 500;  // in milliseconds
-    
-    
-    if (millis() - lastBlinkTime > blinkInterval) {
-        
-        if (ledState == HIGH) {
-            ledState = LOW;
-        } else {
-            ledState = HIGH;
-        }
-        
-        digitalWrite(led, ledState);   // Turn ON the LED pins
-        digitalWrite(led2, ledState);
-        lastBlinkTime = millis();
-    
-    }
-    
-}
 
 /*************** FUNCTIONS FOR USE IN REAL CARD READ APPLICATIONS *******************************/
 
@@ -1177,6 +1199,7 @@ eRetStatus readTheCard() {
     }
 
     // we have a card presented
+    digitalWrite(READY_LED,LOW);
     g_cardData.clientID = 0;
     g_cardData.UID = "";
     writeToLCD("","");
@@ -1207,6 +1230,7 @@ eRetStatus readTheCard() {
 
         // do nothing factory fresh code
         writeToLCD("Card is not MN"," ");
+        buzzerBadBeep();
         returnStatus = COMPLETE_FAIL;
 
     } else  {  // MN formatted card
@@ -1245,11 +1269,11 @@ eRetStatus readTheCard() {
         if (g_cardData.clientID == 0 ) {
             returnStatus = COMPLETE_FAIL;
             msg = "Card read failed";
-            tone(BUZZER_PIN,250,500);
+            buzzerBadBeep();
         } else {
             returnStatus = COMPLETE_OK;
             msg = "CID:" + String(g_cardData.clientID);
-            tone(BUZZER_PIN,750,50); //good
+            buzzerGoodBeep();
         }
         writeToLCD(msg, "");
         Serial.println(msg);
@@ -1285,17 +1309,18 @@ void setup() {
     pinMode(ADMIT_LED, OUTPUT);
     pinMode(REJECT_LED, OUTPUT);
     pinMode(BUZZER_PIN, OUTPUT);
+    pinMode(ONBOARD_LED_PIN, OUTPUT);   // the D7 LED
     
     digitalWrite(READY_LED, LOW);
     digitalWrite(ADMIT_LED, LOW);
     digitalWrite(REJECT_LED, LOW);
     digitalWrite(BUZZER_PIN, LOW);
+    digitalWrite(ONBOARD_LED_PIN,LOW);
  
 #ifdef LCD_PRESENT
     lcd.begin(16,2);
 #endif
     writeToLCD("MN Checkin","StartUp");
-    
 #ifdef TEST
     delay(5000);    // delay to get putty up
     Serial.println("trying to connect ....");
@@ -1305,7 +1330,7 @@ void setup() {
     // ------ RFID SetUp
     pinMode(IRQ_PIN, INPUT);     // IRQ pin from PN532
     //pinMode(RST_PIN, OUTPUT);    // reserved for PN532 RST -- not used at this time
-    pinMode(LED_PIN, OUTPUT);   // the D7 LED
+
     
     nfc.begin(); 
  
@@ -1315,6 +1340,7 @@ void setup() {
         versiondata = nfc.getFirmwareVersion();
         if (!versiondata) {             
             Serial.println("no board");
+            writeToLCD("Setup error","NFC board error");
             delay(1000);
         }
     }  while (!versiondata);
@@ -1328,14 +1354,6 @@ void setup() {
     // now start up the card reader
     nfc.SAMConfig();
     
-    //flash the D7 LED twice
-    for (int i = 0; i < 2; i++) {
-        digitalWrite(LED_PIN, HIGH);
-        delay(500);
-        digitalWrite(LED_PIN, LOW);
-        delay(500);
-    } 
-
 #endif
 
     // ------- CheckIn Setup
@@ -1367,14 +1385,30 @@ void setup() {
     success = Particle.function("PackagesByClientID",ezfGetPackagesByClientID);
     Particle.subscribe(System.deviceID() + "ezfGetPackagesByClientID",ezfReceivePackagesByClientID);
 
-    writeToLCD("MN Checkin","Initialized");
-
     System.on(firmware_update, firmwareupdatehandler);
 
+    //Show all lights
+    digitalWrite(READY_LED,HIGH);
+    digitalWrite(ADMIT_LED,HIGH);
+    digitalWrite(REJECT_LED,HIGH);
+    writeToLCD("XXXXXXXXXXXXXXXX","XXXXXXXXXXXXXXXX");
+    delay(500);
+    writeToLCD("","");
+    digitalWrite(READY_LED,LOW);
+    digitalWrite(ADMIT_LED,LOW);
+    digitalWrite(REJECT_LED,LOW);
+
     // Signal ready to go
-    tone(BUZZER_PIN,750,50); //good
-    delay(100);
-    tone(BUZZER_PIN,750,50); //good
+    writeToLCD("MN Checkin","Setup Done");
+    buzzerGoodBeeps2();
+    //flash the D7 LED twice
+    for (int i = 0; i < 2; i++) {
+        digitalWrite(ONBOARD_LED_PIN, HIGH);
+        delay(500);
+        digitalWrite(ONBOARD_LED_PIN, LOW);
+        delay(500);
+    } 
+
 
 }
 
@@ -1392,10 +1426,12 @@ void loop() {
     
     switch (mainloopState) {
     case mlsIDLE: {
+        digitalWrite(READY_LED,HIGH);
         eRetStatus retStatus = readTheCard();
         if (retStatus == COMPLETE_OK) {
             // move to the next step
             mainloopState = mlsREQUESTTOKEN;
+            digitalWrite(READY_LED,LOW);
             }
         break;
     }
@@ -1416,6 +1452,9 @@ void loop() {
             if (millis() - processStartMilliseconds > 15000) {
                 debugEvent("took too long to get token, checkin aborts");
                 processStartMilliseconds = 0;
+                writeToLCD("Timeout token", "Try Again");
+                buzzerBadBeep;
+                delay(2000);
                 mainloopState = mlsIDLE;
             }
         //Otherwise we stay in this state
@@ -1440,6 +1479,9 @@ void loop() {
             if (millis() - processStartMilliseconds > 15000) {
                 debugEvent("15 second timer exeeded, checkin aborts");
                 processStartMilliseconds = 0;
+                writeToLCD("Timeout clientInfo", "Try Again");
+                buzzerBadBeep;
+                delay(2000);
                 mainloopState = mlsIDLE;
             }
         } // Otherwise we stay in this state
@@ -1451,6 +1493,12 @@ void loop() {
         bool allowIn = isClientOkToCheckIn();
         if ( !allowIn ) {
             //client account status is bad
+            writeToLCD("Acct Status Bad","See Manager");
+            buzzerBadBeep;
+            digitalWrite(REJECT_LED,HIGH);
+            delay(2000);
+            digitalWrite(REJECT_LED,LOW);
+
             mainloopState = mlsIDLE;
             debugEvent("contract status is not good."); 
 
@@ -1466,10 +1514,10 @@ void loop() {
             // tell EZF to check someone in
             ezfCheckInClient(String(g_clientInfo.clientID));
             writeToLCD("Welcome",g_clientInfo.name);
-            tone(BUZZER_PIN,750,50); //good
-            delay(100);
-            tone(BUZZER_PIN,750,50);
+            digitalWrite(ADMIT_LED,HIGH);
+            buzzerGoodBeeps2();
             delay(1000);
+            digitalWrite(ADMIT_LED,LOW);
             mainloopState = mlsIDLE;
         
             }
