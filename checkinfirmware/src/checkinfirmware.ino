@@ -174,38 +174,6 @@ LiquidCrystal lcd(A0, A1, A2, A3, D5, D6);
 
 
 
-// -------------------- UTILITIES -----------------------
-
-template <size_t charCount>
-void strcpy_safe(char (&output)[charCount], const char* pSrc)
-{
-    // Copy the string — don’t copy too many bytes.
-    strncpy(output, pSrc, charCount);
-    // Ensure null-termination.
-    output[charCount - 1] = 0;
-}
-
-char * strcat_safe( const char *str1, const char *str2 ) 
-{
-    char *finalString = NULL;
-    size_t n = 0;
-
-    if ( str1 ) n += strlen( str1 );
-    if ( str2 ) n += strlen( str2 );
-
-    finalString = (char*) malloc( n + 1 );
-    
-    if ( ( str1 || str2 ) && ( finalString != NULL ) )
-    {
-        *finalString = '\0';
-
-        if ( str1 ) strcpy( finalString, str1 );
-        if ( str2 ) strcat( finalString, str2 );
-    }
-
-    return finalString;
-}  
-  
 
 // Define the pins we're going to call pinMode on
 
@@ -258,6 +226,67 @@ typedef enum eRetStatus {
 
 // ------------------   Forward declarations, when needed
 //
+
+
+
+// -------------------- UTILITIES -----------------------
+
+template <size_t charCount>
+void strcpy_safe(char (&output)[charCount], const char* pSrc)
+{
+    // Copy the string — don’t copy too many bytes.
+    strncpy(output, pSrc, charCount);
+    // Ensure null-termination.
+    output[charCount - 1] = 0;
+}
+
+char * strcat_safe( const char *str1, const char *str2 ) 
+{
+    char *finalString = NULL;
+    size_t n = 0;
+
+    if ( str1 ) n += strlen( str1 );
+    if ( str2 ) n += strlen( str2 );
+
+    finalString = (char*) malloc( n + 1 );
+    
+    if ( ( str1 || str2 ) && ( finalString != NULL ) )
+    {
+        *finalString = '\0';
+
+        if ( str1 ) strcpy( finalString, str1 );
+        if ( str2 ) strcat( finalString, str2 );
+    }
+
+    return finalString;
+}  
+
+// writeToLCD
+// pass in "","" to clear screen 
+// pass in "" for one line to leave it unchanged
+void writeToLCD(String line1, String line2) {
+#ifdef LCD_PRESENT
+    const char* BLANKLINE = "                ";
+    if ((line1.length() == 0) & (line2.length() ==0)) {
+        lcd.clear();
+    } else {
+        if (line1.length() > 0){
+            lcd.setCursor(0,0);
+            lcd.print(BLANKLINE);
+            lcd.setCursor(0,0);
+            lcd.print(line1);                        
+        }
+        if (line2.length() > 0){
+            lcd.setCursor(0,1);
+            lcd.print(BLANKLINE);
+            lcd.setCursor(0,1);
+            lcd.print(line2);
+        }
+    }
+    
+#endif
+}
+
 
 
 //-------------- Particle Publish Routines --------------
@@ -1111,11 +1140,7 @@ eRetStatus readTheCard() {
     // 'uid' will be populated with the UID, and uidLength will indicate
     Serial.println("waiting for ISO14443A card to be presented to the reader ...");
     
-    lcd.clear();
-    lcd.setCursor(0,0);
-    lcd.print("Place card on");
-    lcd.setCursor(0,1);
-    lcd.print("reader");
+    writeToLCD("Place card on","reader");
     
     if(!nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
         // no card presented so we just exit
@@ -1125,7 +1150,7 @@ eRetStatus readTheCard() {
     // we have a card presented
     g_cardData.clientID = 0;
     g_cardData.UID = "";
-    lcd.clear();
+    writeToLCD("","");
   
     #ifdef TEST
         // Display some basic information about the card
@@ -1152,8 +1177,7 @@ eRetStatus readTheCard() {
     if(cardType == 0) { // factory fresh card
 
         // do nothing factory fresh code
-        lcd.setCursor(0,0);
-        lcd.print("Card is not MN");
+        writeToLCD("Card is not MN"," ");
         returnStatus = COMPLETE_FAIL;
 
     } else  {  // MN formatted card
@@ -1198,17 +1222,14 @@ eRetStatus readTheCard() {
             msg = "CID:" + String(g_cardData.clientID);
             tone(BUZZER_PIN,750,50); //good
         }
-        lcd.setCursor(0,0);
-        lcd.print(msg);
+        writeToLCD(msg, "");
         Serial.println(msg);
         Serial.println("");  
 
     }
     
     Serial.println("Remove card from reader ...");
-
-    lcd.setCursor(0,1);
-    lcd.print("Remove card ...");
+    writeToLCD("","Remove card ...");
     
     while(nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
         // wait for card to be removed
@@ -1243,12 +1264,8 @@ void setup() {
  
 #ifdef LCD_PRESENT
     lcd.begin(16,2);
-    lcd.clear();
-    lcd.setCursor(0,0);
-    lcd.print("MN Checkin");
-    lcd.setCursor(0,1);
-    lcd.print("StartUp");
 #endif
+    writeToLCD("MN Checkin","StartUp");
     
 #ifdef TEST
     delay(5000);    // delay to get putty up
@@ -1321,13 +1338,7 @@ void setup() {
     success = Particle.function("PackagesByClientID",ezfGetPackagesByClientID);
     Particle.subscribe(System.deviceID() + "ezfGetPackagesByClientID",ezfReceivePackagesByClientID);
 
-#ifdef LCD_PRESENT
-    lcd.clear();
-    lcd.setCursor(0,0);
-    lcd.print("MN Checkin");
-    lcd.setCursor(0,1);
-    lcd.print("Initialized");
-#endif
+    writeToLCD("MN Checkin","Initialized");
 
     // Signal ready to go
     tone(BUZZER_PIN,750,50); //good
