@@ -367,7 +367,7 @@ int particlePublish (String eventName, String data) {
     if (millis() - lastSentTime > 1000 ){
         // only publish once a second
         
-        Particle.publish(eventName, data);
+        Particle.publish(eventName, data, PRIVATE);
         lastSentTime = millis();
         
         return 0;
@@ -428,7 +428,7 @@ int ezfGetCheckInToken () {
         // Token is no longer good    
         g_authTokenCheckIn.token = "";
         g_tokenResponseBuffer = "";
-        Particle.publish("ezfCheckInToken", "");
+        Particle.publish("ezfCheckInToken", "", PRIVATE);
     
     }
 
@@ -475,8 +475,9 @@ void clearClientInfo() {
     
 }
 
-// Parse the client JSON from EZF to get a list of clientIDs and Names
-int clientListFromJSON (String data) {
+// Parse the client JSON from EZF to load g_clientInfo
+// Member Number is now supposed to be unique
+int clientInfoFromJSON (String data) {
     
     // try to parse it. Return 1 if fails, else load g_clientInfo and return 0.
     
@@ -556,7 +557,7 @@ int ezfClientByMemberNumber (String data) {
     char output[1000];
     serializeJson(docJSON, output);
     
-    int rtnCode = Particle.publish("ezfClientByMemberNumber",output );
+    int rtnCode = Particle.publish("ezfClientByMemberNumber",output, PRIVATE );
     if (rtnCode){} //XXX
     
     return g_clientInfo.memberNumber.toInt();
@@ -568,7 +569,7 @@ void ezfReceiveClientByMemberNumber (const char *event, const char *data)  {
     g_cibmnResponseBuffer = g_cibmnResponseBuffer + String(data);
     debugEvent("clientInfoPart " + String(data));
     
-    clientListFromJSON(g_cibmnResponseBuffer); // try to parse it
+    clientInfoFromJSON(g_cibmnResponseBuffer); // try to parse it
 
 }
 
@@ -615,7 +616,7 @@ int ezfClientByClientID (int clientID) {
     char output[1000];
     serializeJson(docJSON, output);
     
-    int rtnCode = Particle.publish("ezfClientByClientID",output );
+    Particle.publish("ezfClientByClientID",output, PRIVATE );
     
     return 0;
 }
@@ -674,7 +675,7 @@ int ezfGetPackagesByClientID (String notused) {
     char output[1000];
     serializeJson(docJSON, output);
     
-    int rtnCode = Particle.publish("ezfGetPackagesByClientID",output );
+    int rtnCode = Particle.publish("ezfGetPackagesByClientID",output, PRIVATE );
     
     return rtnCode;
 }
@@ -713,7 +714,7 @@ int ezfCheckInClient(String clientID) {
     char output[1000];
     serializeJson(docJSON, output);
     
-    int rtnCode = Particle.publish("ezfCheckInClient",output );
+    int rtnCode = Particle.publish("ezfCheckInClient",output, PRIVATE );
     
     return rtnCode;
 }
@@ -1394,7 +1395,7 @@ void setup() {
     Particle.subscribe(System.deviceID() + "ezfClientByClientID", ezfReceiveClientByClientID, MY_DEVICES);
     
     success = Particle.function("PackagesByClientID",ezfGetPackagesByClientID);
-    Particle.subscribe(System.deviceID() + "ezfGetPackagesByClientID",ezfReceivePackagesByClientID);
+    Particle.subscribe(System.deviceID() + "ezfGetPackagesByClientID",ezfReceivePackagesByClientID, MY_DEVICES);
 
     System.on(firmware_update, firmwareupdatehandler);
 
