@@ -224,12 +224,16 @@ struct  struct_clientInfo {  // holds info on the current client
     String contractStatus = ""; // string returned from EZF. Values we know of: Active, Frozen, Cancelled, Suspended
 } g_clientInfo;
 
+
+
 typedef enum eRetStatus {
     IN_PROCESS = 1,
     COMPLETE_OK = 2,
     COMPLETE_FAIL = 3,
     IDLE =4
 } eRetStatus;
+
+
 
 
 // ------------------   Forward declarations, when needed
@@ -471,7 +475,8 @@ void clearClientInfo() {
     
 }
 
-int parseClientInfoJSON (String data) {
+// Parse the client JSON from EZF to get a list of clientIDs and Names
+int clientListFromJSON (String data) {
     
     // try to parse it. Return 1 if fails, else load g_clientInfo and return 0.
     
@@ -491,6 +496,8 @@ int parseClientInfoJSON (String data) {
             
             // member id is not unique
             g_recentErrors = "More than one client info in JSON ... " + g_recentErrors;
+            writeToLCD("Err. Member Num", "not unique");
+            buzzerBadBeep();
             
         } else {
          
@@ -561,7 +568,7 @@ void ezfReceiveClientByMemberNumber (const char *event, const char *data)  {
     g_cibmnResponseBuffer = g_cibmnResponseBuffer + String(data);
     debugEvent("clientInfoPart " + String(data));
     
-    parseClientInfoJSON(g_cibmnResponseBuffer); // try to parse it
+    clientListFromJSON(g_cibmnResponseBuffer); // try to parse it
 
 }
 
@@ -1327,6 +1334,8 @@ void setup() {
 #endif
 
 #ifdef RFID_READER_PRESENT 
+
+    writeToLCD("Initializing","RFID Reader");
     // ------ RFID SetUp
     pinMode(IRQ_PIN, INPUT);     // IRQ pin from PN532
     //pinMode(RST_PIN, OUTPUT);    // reserved for PN532 RST -- not used at this time
@@ -1358,6 +1367,8 @@ void setup() {
 
     // ------- CheckIn Setup
 
+    writeToLCD("Initializing","Particle Cloud");
+
     Particle.variable ("ClientID", g_clientInfo.clientID);
     Particle.variable ("RFIDCardKey", g_clientInfo.RFIDCardKey);
     Particle.variable ("ContractStatus",g_clientInfo.contractStatus);
@@ -1388,11 +1399,12 @@ void setup() {
     System.on(firmware_update, firmwareupdatehandler);
 
     //Show all lights
+    writeToLCD("Init all LEDs","should blink");
     digitalWrite(READY_LED,HIGH);
     digitalWrite(ADMIT_LED,HIGH);
     digitalWrite(REJECT_LED,HIGH);
     writeToLCD("XXXXXXXXXXXXXXXX","XXXXXXXXXXXXXXXX");
-    delay(500);
+    delay(1000);
     writeToLCD("","");
     digitalWrite(READY_LED,LOW);
     digitalWrite(ADMIT_LED,LOW);
@@ -1453,7 +1465,7 @@ void loop() {
                 debugEvent("took too long to get token, checkin aborts");
                 processStartMilliseconds = 0;
                 writeToLCD("Timeout token", "Try Again");
-                buzzerBadBeep;
+                buzzerBadBeep();
                 delay(2000);
                 mainloopState = mlsIDLE;
             }
@@ -1480,7 +1492,7 @@ void loop() {
                 debugEvent("15 second timer exeeded, checkin aborts");
                 processStartMilliseconds = 0;
                 writeToLCD("Timeout clientInfo", "Try Again");
-                buzzerBadBeep;
+                buzzerBadBeep();
                 delay(2000);
                 mainloopState = mlsIDLE;
             }
@@ -1494,7 +1506,7 @@ void loop() {
         if ( !allowIn ) {
             //client account status is bad
             writeToLCD("Acct Status Bad","See Manager");
-            buzzerBadBeep;
+            buzzerBadBeep();
             digitalWrite(REJECT_LED,HIGH);
             delay(2000);
             digitalWrite(REJECT_LED,LOW);
