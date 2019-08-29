@@ -105,17 +105,24 @@
  * 1.02: Realized that having a state machine in the checkin code was confusing and not
  *          the way to go. Changed to have the only state machine in the main loop and
  *          now the code is much cleaner and easier to read. The states are all explicit.
+ * 1.03: Added some buzzer feedback for user and some LCD messages.
  * 
  * (c) 2019; Team Practical Projects
  * 
  * Authors: Bob Glicksman, Jim Schrempp
- * version 1.02; 8/4/2019.
+ * version 1.03; 8/4/2019.
+ * version 1.04: 8/25/2019 
+ *      Moved all LCD writes to a common routine
+ *      Added fimware update begin event so LCD can be cleared
+ *               
  * 
  * 
 ************************************************************************/
 
 //#define TEST     // uncomment for debugging mode
 char * strcat_safe( const char *str1, const char *str2 );
+void writeToLCD(String line1, String line2);
+void firmwareupdatehandler(system_event_t event);
 int particlePublish (String eventName, String data);
 void debugEvent (String message);
 int ezfGetCheckInTokenCloud (String data);
@@ -143,7 +150,7 @@ bool changeKeys(uint8_t oldKeyNum, uint8_t *oldKey, uint8_t *newKeyA, uint8_t *n
 uint8_t testCard();
 void setup();
 void loop();
-#line 112 "/Users/jschrempp/Documents/devschrempp/GitHub/jschrempp.MN_ACL/checkinfirmware/src/checkinfirmware.ino"
+#line 117 "/Users/jschrempp/Documents/devschrempp/GitHub/jschrempp.MN_ACL/checkinfirmware/src/checkinfirmware.ino"
 #define RFID_READER_PRESENT  // uncomment when an RFID reader is connected
 #define LCD_PRESENT  // uncomment when an LCD display is connected
 
@@ -208,38 +215,6 @@ LiquidCrystal lcd(A0, A1, A2, A3, D5, D6);
 
 
 
-// -------------------- UTILITIES -----------------------
-
-template <size_t charCount>
-void strcpy_safe(char (&output)[charCount], const char* pSrc)
-{
-    // Copy the string — don’t copy too many bytes.
-    strncpy(output, pSrc, charCount);
-    // Ensure null-termination.
-    output[charCount - 1] = 0;
-}
-
-char * strcat_safe( const char *str1, const char *str2 ) 
-{
-    char *finalString = NULL;
-    size_t n = 0;
-
-    if ( str1 ) n += strlen( str1 );
-    if ( str2 ) n += strlen( str2 );
-
-    finalString = (char*) malloc( n + 1 );
-    
-    if ( ( str1 || str2 ) && ( finalString != NULL ) )
-    {
-        *finalString = '\0';
-
-        if ( str1 ) strcpy( finalString, str1 );
-        if ( str2 ) strcat( finalString, str2 );
-    }
-
-    return finalString;
-}  
-  
 
 // Define the pins we're going to call pinMode on
 
@@ -293,6 +268,81 @@ typedef enum eRetStatus {
 // ------------------   Forward declarations, when needed
 //
 
+
+
+// -------------------- UTILITIES -----------------------
+
+template <size_t charCount>
+void strcpy_safe(char (&output)[charCount], const char* pSrc)
+{
+    // Copy the string — don’t copy too many bytes.
+    strncpy(output, pSrc, charCount);
+    // Ensure null-termination.
+    output[charCount - 1] = 0;
+}
+
+char * strcat_safe( const char *str1, const char *str2 ) 
+{
+    char *finalString = NULL;
+    size_t n = 0;
+
+    if ( str1 ) n += strlen( str1 );
+    if ( str2 ) n += strlen( str2 );
+
+    finalString = (char*) malloc( n + 1 );
+    
+    if ( ( str1 || str2 ) && ( finalString != NULL ) )
+    {
+        *finalString = '\0';
+
+        if ( str1 ) strcpy( finalString, str1 );
+        if ( str2 ) strcat( finalString, str2 );
+    }
+
+    return finalString;
+}  
+
+// writeToLCD
+// pass in "","" to clear screen 
+// pass in "" for one line to leave it unchanged
+void writeToLCD(String line1, String line2) {
+#ifdef LCD_PRESENT
+    const char* BLANKLINE = "                ";
+    if ((line1.length() == 0) & (line2.length() ==0)) {
+        lcd.clear();
+    } else {
+        if (line1.length() > 0){
+            lcd.setCursor(0,0);
+            lcd.print(BLANKLINE);
+            lcd.setCursor(0,0);
+            lcd.print(line1);                        
+        }
+        if (line2.length() > 0){
+            lcd.setCursor(0,1);
+            lcd.print(BLANKLINE);
+            lcd.setCursor(0,1);
+            lcd.print(line2);
+        }
+    }
+    
+#endif
+}
+
+// Called by Particle OS when a firmware update is about to begin
+void firmwareupdatehandler(system_event_t event) {
+    switch (event) {
+    case firmware_update_begin:
+        writeToLCD("Firmware update","in progress");
+        // xxx should turn off all LEDs
+        break;
+    case firmware_update_complete:
+        writeToLCD("Firmeware update","complete");
+        break;
+    case firmware_update_failed:
+        writeToLCD("Firmware update","failed");
+        break;
+    }
+}
 
 //-------------- Particle Publish Routines --------------
 // These routines are used to space out publish events to avoid being throttled.
@@ -1145,11 +1195,7 @@ eRetStatus readTheCard() {
     // 'uid' will be populated with the UID, and uidLength will indicate
     Serial.println("waiting for ISO14443A card to be presented to the reader ...");
     
-    lcd.clear();
-    lcd.setCursor(0,0);
-    lcd.print("Place card on");
-    lcd.setCursor(0,1);
-    lcd.print("reader");
+    writeToLCD("Place card on","reader");
     
     if(!nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
         // no card presented so we just exit
@@ -1159,7 +1205,7 @@ eRetStatus readTheCard() {
     // we have a card presented
     g_cardData.clientID = 0;
     g_cardData.UID = "";
-    lcd.clear();
+    writeToLCD("","");
   
     #ifdef TEST
         // Display some basic information about the card
@@ -1186,8 +1232,7 @@ eRetStatus readTheCard() {
     if(cardType == 0) { // factory fresh card
 
         // do nothing factory fresh code
-        lcd.setCursor(0,0);
-        lcd.print("Card is not MN");
+        writeToLCD("Card is not MN"," ");
         returnStatus = COMPLETE_FAIL;
 
     } else  {  // MN formatted card
@@ -1226,24 +1271,20 @@ eRetStatus readTheCard() {
         if (g_cardData.clientID == 0 ) {
             returnStatus = COMPLETE_FAIL;
             msg = "Card read failed";
-            tone(BUZZER_PIN,2000,20);
-            delay(100);
-            tone(BUZZER_PIN,2000,20);
+            tone(BUZZER_PIN,250,500);
         } else {
             returnStatus = COMPLETE_OK;
             msg = "CID:" + String(g_cardData.clientID);
+            tone(BUZZER_PIN,750,50); //good
         }
-        lcd.setCursor(0,0);
-        lcd.print(msg);
+        writeToLCD(msg, "");
         Serial.println(msg);
         Serial.println("");  
 
     }
     
     Serial.println("Remove card from reader ...");
-
-    lcd.setCursor(0,1);
-    lcd.print("Remove card ...");
+    writeToLCD("","Remove card ...");
     
     while(nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
         // wait for card to be removed
@@ -1278,10 +1319,10 @@ void setup() {
  
 #ifdef LCD_PRESENT
     lcd.begin(16,2);
-    lcd.clear();
 #endif
+    writeToLCD("MN Checkin","StartUp");
     
-#ifdef test
+#ifdef TEST
     delay(5000);    // delay to get putty up
     Serial.println("trying to connect ....");
 #endif
@@ -1352,7 +1393,14 @@ void setup() {
     success = Particle.function("PackagesByClientID",ezfGetPackagesByClientID);
     Particle.subscribe(System.deviceID() + "ezfGetPackagesByClientID",ezfReceivePackagesByClientID);
 
+    writeToLCD("MN Checkin","Initialized");
 
+    System.on(firmware_update, firmwareupdatehandler);
+
+    // Signal ready to go
+    tone(BUZZER_PIN,750,50); //good
+    delay(100);
+    tone(BUZZER_PIN,750,50); //good
 
 }
 
@@ -1443,7 +1491,9 @@ void loop() {
             debugEvent ("SM: now checkin client");
             // tell EZF to check someone in
             ezfCheckInClient(String(g_clientInfo.clientID));
-            
+            tone(BUZZER_PIN,750,50); //good
+            delay(100);
+            tone(BUZZER_PIN,750,50);
             mainloopState = mlsIDLE;
         
             }
