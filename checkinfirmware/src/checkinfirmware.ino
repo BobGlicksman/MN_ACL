@@ -105,6 +105,13 @@
  * 
  * Authors: Bob Glicksman, Jim Schrempp
  * version 1.03; 8/4/2019.
+ * version 1.04: 8/25/2019 
+ *      Moved all LCD writes to a common routine
+ *      Added fimware update begin event so LCD can be cleared
+ *      LED actions now in placement
+ *      LCD messages when errors occur
+ *      More beeps in places with errors
+ *      Member name now displayed on successful checkin         
  * 
  * 
 ************************************************************************/
@@ -128,9 +135,9 @@
 
 #define IRQ_PIN D3
 #define RST_PIN D4  // not connected
-#define LED_PIN D7
+#define ONBOARD_LED_PIN D7
 
-#define READY_LED D4
+#define READY_LED D4   // xxx second definition of this pin...
 #define ADMIT_LED A4
 #define REJECT_LED A5
 #define BUZZER_PIN D2
@@ -174,38 +181,6 @@ LiquidCrystal lcd(A0, A1, A2, A3, D5, D6);
 
 
 
-// -------------------- UTILITIES -----------------------
-
-template <size_t charCount>
-void strcpy_safe(char (&output)[charCount], const char* pSrc)
-{
-    // Copy the string — don’t copy too many bytes.
-    strncpy(output, pSrc, charCount);
-    // Ensure null-termination.
-    output[charCount - 1] = 0;
-}
-
-char * strcat_safe( const char *str1, const char *str2 ) 
-{
-    char *finalString = NULL;
-    size_t n = 0;
-
-    if ( str1 ) n += strlen( str1 );
-    if ( str2 ) n += strlen( str2 );
-
-    finalString = (char*) malloc( n + 1 );
-    
-    if ( ( str1 || str2 ) && ( finalString != NULL ) )
-    {
-        *finalString = '\0';
-
-        if ( str1 ) strcpy( finalString, str1 );
-        if ( str2 ) strcat( finalString, str2 );
-    }
-
-    return finalString;
-}  
-  
 
 // Define the pins we're going to call pinMode on
 
@@ -241,12 +216,15 @@ struct struct_authTokenCheckIn {
 } g_authTokenCheckIn;
 
 struct  struct_clientInfo {  // holds info on the current client
+    String name = "";
     bool isValid = false;        // when true this sturcture has good data in it
     int clientID = 0;           // numeric value assigned by EZFacility. Guaranteed to be unique
     String RFIDCardKey = "";    // string stored in EZFacility "custom fields". We may want to change this name
     String memberNumber = "";   // string stored in EZFacility. May not be unique
     String contractStatus = ""; // string returned from EZF. Values we know of: Active, Frozen, Cancelled, Suspended
 } g_clientInfo;
+
+
 
 typedef enum eRetStatus {
     IN_PROCESS = 1,
@@ -256,8 +234,126 @@ typedef enum eRetStatus {
 } eRetStatus;
 
 
+
+
 // ------------------   Forward declarations, when needed
 //
+
+
+
+// -------------------- UTILITIES -----------------------
+
+template <size_t charCount>
+void strcpy_safe(char (&output)[charCount], const char* pSrc)
+{
+    // Copy the string — don’t copy too many bytes.
+    strncpy(output, pSrc, charCount);
+    // Ensure null-termination.
+    output[charCount - 1] = 0;
+}
+
+char * strcat_safe( const char *str1, const char *str2 ) 
+{
+    char *finalString = NULL;
+    size_t n = 0;
+
+    if ( str1 ) n += strlen( str1 );
+    if ( str2 ) n += strlen( str2 );
+
+    finalString = (char*) malloc( n + 1 );
+    
+    if ( ( str1 || str2 ) && ( finalString != NULL ) )
+    {
+        *finalString = '\0';
+
+        if ( str1 ) strcpy( finalString, str1 );
+        if ( str2 ) strcat( finalString, str2 );
+    }
+
+    return finalString;
+}  
+
+// writeToLCD
+// pass in "","" to clear screen 
+// pass in "" for one line to leave it unchanged
+void writeToLCD(String line1, String line2) {
+#ifdef LCD_PRESENT
+    const char* BLANKLINE = "                ";
+    if ((line1.length() == 0) & (line2.length() ==0)) {
+        lcd.clear();
+    } else {
+        if (line1.length() > 0){
+            lcd.setCursor(0,0);
+            lcd.print(BLANKLINE);
+            lcd.setCursor(0,0);
+            lcd.print(line1);                        
+        }
+        if (line2.length() > 0){
+            lcd.setCursor(0,1);
+            lcd.print(BLANKLINE);
+            lcd.setCursor(0,1);
+            lcd.print(line2);
+        }
+    }
+    
+#endif
+}
+
+// Called by Particle OS when a firmware update is about to begin
+void firmwareupdatehandler(system_event_t event, int data) {
+    switch (data) {
+    case firmware_update_begin:
+        writeToLCD("Firmware update","in progress");
+        digitalWrite(READY_LED,LOW);
+        digitalWrite(ADMIT_LED,LOW);
+        digitalWrite(REJECT_LED,HIGH);
+        break;
+    case firmware_update_complete:
+        //writeToLCD("Firmeware update","complete");  // xxx this didn't get called
+        break;
+    case firmware_update_failed:
+        //writeToLCD("Firmware update","failed");  // xxx this is called even on successful update??
+        break;
+    }
+}
+
+
+void heartbeatLEDs() {
+    
+    static unsigned long lastBlinkTimeD7 = 0;
+    static int ledState = HIGH;
+    const int blinkInterval = 500;  // in milliseconds
+    
+    
+    if (millis() - lastBlinkTimeD7 > blinkInterval) {
+        
+        if (ledState == HIGH) {
+            ledState = LOW;
+        } else {
+            ledState = HIGH;
+        }
+        
+        digitalWrite(led, ledState);   // Turn ON the LED pins
+        digitalWrite(led2, ledState);
+        lastBlinkTimeD7 = millis();
+    
+    }
+    
+}
+
+void buzzerBadBeep() {
+    tone(BUZZER_PIN,250,500);
+}
+
+void buzzerGoodBeep(){
+    tone(BUZZER_PIN,750,50); //good
+}
+
+void buzzerGoodBeeps2(){
+    tone(BUZZER_PIN,750,50); //good
+    delay(100);
+    tone(BUZZER_PIN,750,50);
+}
 
 
 //-------------- Particle Publish Routines --------------
@@ -271,7 +367,7 @@ int particlePublish (String eventName, String data) {
     if (millis() - lastSentTime > 1000 ){
         // only publish once a second
         
-        Particle.publish(eventName, data);
+        Particle.publish(eventName, data, PRIVATE);
         lastSentTime = millis();
         
         return 0;
@@ -332,7 +428,7 @@ int ezfGetCheckInToken () {
         // Token is no longer good    
         g_authTokenCheckIn.token = "";
         g_tokenResponseBuffer = "";
-        Particle.publish("ezfCheckInToken", "");
+        Particle.publish("ezfCheckInToken", "", PRIVATE);
     
     }
 
@@ -370,14 +466,18 @@ void ezfReceiveCheckInToken (const char *event, const char *data)  {
 
 void clearClientInfo() {
     
+    g_clientInfo.name = "";
     g_clientInfo.isValid = false;
     g_clientInfo.clientID = 0;
     g_clientInfo.RFIDCardKey = "";
     g_clientInfo.contractStatus = "";
+    g_clientInfo.memberNumber = "";
     
 }
 
-int parseClientInfoJSON (String data) {
+// Parse the client JSON from EZF to load g_clientInfo
+// Member Number is now supposed to be unique
+int clientInfoFromJSON (String data) {
     
     // try to parse it. Return 1 if fails, else load g_clientInfo and return 0.
     
@@ -397,6 +497,8 @@ int parseClientInfoJSON (String data) {
             
             // member id is not unique
             g_recentErrors = "More than one client info in JSON ... " + g_recentErrors;
+            writeToLCD("Err. Member Num", "not unique");
+            buzzerBadBeep();
             
         } else {
          
@@ -410,6 +512,10 @@ int parseClientInfoJSON (String data) {
             if (fieldName.indexOf("RFID Card UID") >= 0) {
                g_clientInfo.RFIDCardKey = root_0["CustomFields"][0]["Value"].as<char*>(); 
             }
+
+            g_clientInfo.name = String(root_0["FirstName"].as<char*>()) + " " + String(root_0["LastName"].as<char*>());
+
+            g_clientInfo.memberNumber = String(root_0["MembershipNumber"].as<char*>());
             
             g_clientInfo.isValid = true;
             
@@ -451,7 +557,7 @@ int ezfClientByMemberNumber (String data) {
     char output[1000];
     serializeJson(docJSON, output);
     
-    int rtnCode = Particle.publish("ezfClientByMemberNumber",output );
+    int rtnCode = Particle.publish("ezfClientByMemberNumber",output, PRIVATE );
     if (rtnCode){} //XXX
     
     return g_clientInfo.memberNumber.toInt();
@@ -463,7 +569,7 @@ void ezfReceiveClientByMemberNumber (const char *event, const char *data)  {
     g_cibmnResponseBuffer = g_cibmnResponseBuffer + String(data);
     debugEvent("clientInfoPart " + String(data));
     
-    parseClientInfoJSON(g_cibmnResponseBuffer); // try to parse it
+    clientInfoFromJSON(g_cibmnResponseBuffer); // try to parse it
 
 }
 
@@ -510,7 +616,7 @@ int ezfClientByClientID (int clientID) {
     char output[1000];
     serializeJson(docJSON, output);
     
-    int rtnCode = Particle.publish("ezfClientByClientID",output );
+    Particle.publish("ezfClientByClientID",output, PRIVATE );
     
     return 0;
 }
@@ -541,7 +647,11 @@ void ezfReceiveClientByClientID (const char *event, const char *data)  {
         if (fieldName.indexOf("RFID Card UID") >= 0) {
             g_clientInfo.RFIDCardKey = docJSON["CustomFields"][0]["Value"].as<char*>(); 
         }
-            
+        
+        g_clientInfo.name = String(docJSON["FirstName"].as<char*>()) + " " + String(docJSON["LastName"].as<char*>());
+
+        g_clientInfo.memberNumber = String(docJSON["MembershipNumber"].as<char*>());  
+
         g_clientInfo.isValid = true;
         
     }
@@ -565,7 +675,7 @@ int ezfGetPackagesByClientID (String notused) {
     char output[1000];
     serializeJson(docJSON, output);
     
-    int rtnCode = Particle.publish("ezfGetPackagesByClientID",output );
+    int rtnCode = Particle.publish("ezfGetPackagesByClientID",output, PRIVATE );
     
     return rtnCode;
 }
@@ -604,7 +714,7 @@ int ezfCheckInClient(String clientID) {
     char output[1000];
     serializeJson(docJSON, output);
     
-    int rtnCode = Particle.publish("ezfCheckInClient",output );
+    int rtnCode = Particle.publish("ezfCheckInClient",output, PRIVATE );
     
     return rtnCode;
 }
@@ -673,28 +783,6 @@ bool isClientOkToCheckIn (){
 
 }
 
-void heartbeatLEDs() {
-    
-    static unsigned long lastBlinkTime = 0;
-    static int ledState = HIGH;
-    const int blinkInterval = 500;  // in milliseconds
-    
-    
-    if (millis() - lastBlinkTime > blinkInterval) {
-        
-        if (ledState == HIGH) {
-            ledState = LOW;
-        } else {
-            ledState = HIGH;
-        }
-        
-        digitalWrite(led, ledState);   // Turn ON the LED pins
-        digitalWrite(led2, ledState);
-        lastBlinkTime = millis();
-    
-    }
-    
-}
 
 /*************** FUNCTIONS FOR USE IN REAL CARD READ APPLICATIONS *******************************/
 
@@ -1111,11 +1199,7 @@ eRetStatus readTheCard() {
     // 'uid' will be populated with the UID, and uidLength will indicate
     Serial.println("waiting for ISO14443A card to be presented to the reader ...");
     
-    lcd.clear();
-    lcd.setCursor(0,0);
-    lcd.print("Place card on");
-    lcd.setCursor(0,1);
-    lcd.print("reader");
+    writeToLCD("Place card on","reader");
     
     if(!nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
         // no card presented so we just exit
@@ -1123,9 +1207,10 @@ eRetStatus readTheCard() {
     }
 
     // we have a card presented
+    digitalWrite(READY_LED,LOW);
     g_cardData.clientID = 0;
     g_cardData.UID = "";
-    lcd.clear();
+    writeToLCD("","");
   
     #ifdef TEST
         // Display some basic information about the card
@@ -1152,8 +1237,8 @@ eRetStatus readTheCard() {
     if(cardType == 0) { // factory fresh card
 
         // do nothing factory fresh code
-        lcd.setCursor(0,0);
-        lcd.print("Card is not MN");
+        writeToLCD("Card is not MN"," ");
+        buzzerBadBeep();
         returnStatus = COMPLETE_FAIL;
 
     } else  {  // MN formatted card
@@ -1192,23 +1277,20 @@ eRetStatus readTheCard() {
         if (g_cardData.clientID == 0 ) {
             returnStatus = COMPLETE_FAIL;
             msg = "Card read failed";
-            tone(BUZZER_PIN,250,500);
+            buzzerBadBeep();
         } else {
             returnStatus = COMPLETE_OK;
             msg = "CID:" + String(g_cardData.clientID);
-            tone(BUZZER_PIN,750,50); //good
+            buzzerGoodBeep();
         }
-        lcd.setCursor(0,0);
-        lcd.print(msg);
+        writeToLCD(msg, "");
         Serial.println(msg);
         Serial.println("");  
 
     }
     
     Serial.println("Remove card from reader ...");
-
-    lcd.setCursor(0,1);
-    lcd.print("Remove card ...");
+    writeToLCD("","Remove card ...");
     
     while(nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
         // wait for card to be removed
@@ -1235,31 +1317,30 @@ void setup() {
     pinMode(ADMIT_LED, OUTPUT);
     pinMode(REJECT_LED, OUTPUT);
     pinMode(BUZZER_PIN, OUTPUT);
+    pinMode(ONBOARD_LED_PIN, OUTPUT);   // the D7 LED
     
     digitalWrite(READY_LED, LOW);
     digitalWrite(ADMIT_LED, LOW);
     digitalWrite(REJECT_LED, LOW);
     digitalWrite(BUZZER_PIN, LOW);
+    digitalWrite(ONBOARD_LED_PIN,LOW);
  
 #ifdef LCD_PRESENT
     lcd.begin(16,2);
-    lcd.clear();
-    lcd.setCursor(0,0);
-    lcd.print("MN Checkin");
-    lcd.setCursor(0,1);
-    lcd.print("StartUp");
 #endif
-    
+    writeToLCD("MN Checkin","StartUp");
 #ifdef TEST
     delay(5000);    // delay to get putty up
     Serial.println("trying to connect ....");
 #endif
 
 #ifdef RFID_READER_PRESENT 
+
+    writeToLCD("Initializing","RFID Reader");
     // ------ RFID SetUp
     pinMode(IRQ_PIN, INPUT);     // IRQ pin from PN532
     //pinMode(RST_PIN, OUTPUT);    // reserved for PN532 RST -- not used at this time
-    pinMode(LED_PIN, OUTPUT);   // the D7 LED
+
     
     nfc.begin(); 
  
@@ -1269,6 +1350,7 @@ void setup() {
         versiondata = nfc.getFirmwareVersion();
         if (!versiondata) {             
             Serial.println("no board");
+            writeToLCD("Setup error","NFC board error");
             delay(1000);
         }
     }  while (!versiondata);
@@ -1282,17 +1364,11 @@ void setup() {
     // now start up the card reader
     nfc.SAMConfig();
     
-    //flash the D7 LED twice
-    for (int i = 0; i < 2; i++) {
-        digitalWrite(LED_PIN, HIGH);
-        delay(500);
-        digitalWrite(LED_PIN, LOW);
-        delay(500);
-    } 
-
 #endif
 
     // ------- CheckIn Setup
+
+    writeToLCD("Initializing","Particle Cloud");
 
     Particle.variable ("ClientID", g_clientInfo.clientID);
     Particle.variable ("RFIDCardKey", g_clientInfo.RFIDCardKey);
@@ -1319,20 +1395,33 @@ void setup() {
     Particle.subscribe(System.deviceID() + "ezfClientByClientID", ezfReceiveClientByClientID, MY_DEVICES);
     
     success = Particle.function("PackagesByClientID",ezfGetPackagesByClientID);
-    Particle.subscribe(System.deviceID() + "ezfGetPackagesByClientID",ezfReceivePackagesByClientID);
+    Particle.subscribe(System.deviceID() + "ezfGetPackagesByClientID",ezfReceivePackagesByClientID, MY_DEVICES);
 
-#ifdef LCD_PRESENT
-    lcd.clear();
-    lcd.setCursor(0,0);
-    lcd.print("MN Checkin");
-    lcd.setCursor(0,1);
-    lcd.print("Initialized");
-#endif
+    System.on(firmware_update, firmwareupdatehandler);
+
+    //Show all lights
+    writeToLCD("Init all LEDs","should blink");
+    digitalWrite(READY_LED,HIGH);
+    digitalWrite(ADMIT_LED,HIGH);
+    digitalWrite(REJECT_LED,HIGH);
+    writeToLCD("XXXXXXXXXXXXXXXX","XXXXXXXXXXXXXXXX");
+    delay(1000);
+    writeToLCD("","");
+    digitalWrite(READY_LED,LOW);
+    digitalWrite(ADMIT_LED,LOW);
+    digitalWrite(REJECT_LED,LOW);
 
     // Signal ready to go
-    tone(BUZZER_PIN,750,50); //good
-    delay(100);
-    tone(BUZZER_PIN,750,50); //good
+    writeToLCD("MN Checkin","Setup Done");
+    buzzerGoodBeeps2();
+    //flash the D7 LED twice
+    for (int i = 0; i < 2; i++) {
+        digitalWrite(ONBOARD_LED_PIN, HIGH);
+        delay(500);
+        digitalWrite(ONBOARD_LED_PIN, LOW);
+        delay(500);
+    } 
+
 
 }
 
@@ -1350,10 +1439,12 @@ void loop() {
     
     switch (mainloopState) {
     case mlsIDLE: {
+        digitalWrite(READY_LED,HIGH);
         eRetStatus retStatus = readTheCard();
         if (retStatus == COMPLETE_OK) {
             // move to the next step
             mainloopState = mlsREQUESTTOKEN;
+            digitalWrite(READY_LED,LOW);
             }
         break;
     }
@@ -1374,6 +1465,9 @@ void loop() {
             if (millis() - processStartMilliseconds > 15000) {
                 debugEvent("took too long to get token, checkin aborts");
                 processStartMilliseconds = 0;
+                writeToLCD("Timeout token", "Try Again");
+                buzzerBadBeep();
+                delay(2000);
                 mainloopState = mlsIDLE;
             }
         //Otherwise we stay in this state
@@ -1398,6 +1492,9 @@ void loop() {
             if (millis() - processStartMilliseconds > 15000) {
                 debugEvent("15 second timer exeeded, checkin aborts");
                 processStartMilliseconds = 0;
+                writeToLCD("Timeout clientInfo", "Try Again");
+                buzzerBadBeep();
+                delay(2000);
                 mainloopState = mlsIDLE;
             }
         } // Otherwise we stay in this state
@@ -1409,6 +1506,12 @@ void loop() {
         bool allowIn = isClientOkToCheckIn();
         if ( !allowIn ) {
             //client account status is bad
+            writeToLCD("Acct Status Bad","See Manager");
+            buzzerBadBeep();
+            digitalWrite(REJECT_LED,HIGH);
+            delay(2000);
+            digitalWrite(REJECT_LED,LOW);
+
             mainloopState = mlsIDLE;
             debugEvent("contract status is not good."); 
 
@@ -1423,9 +1526,11 @@ void loop() {
             debugEvent ("SM: now checkin client");
             // tell EZF to check someone in
             ezfCheckInClient(String(g_clientInfo.clientID));
-            tone(BUZZER_PIN,750,50); //good
-            delay(100);
-            tone(BUZZER_PIN,750,50);
+            writeToLCD("Welcome",g_clientInfo.name);
+            digitalWrite(ADMIT_LED,HIGH);
+            buzzerGoodBeeps2();
+            delay(1000);
+            digitalWrite(ADMIT_LED,LOW);
             mainloopState = mlsIDLE;
         
             }
