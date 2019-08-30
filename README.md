@@ -1,26 +1,30 @@
 # MN_ACL
 ## RFID based access control and monitoring system for Maker Nexus
-This repository contains testing information, code and results for
-tests related to the development of an access control system for
+This repository contains hardware, software and test information 
+related to the development of an access control system for
 Maker Nexus.
 
-These tests use a Particle Photon.  The Photon is connected to an
-Adafruit PN532 RFID breakout board (https://www.adafruit.com/product/364)
-using an I2C interface, as follows:
+Each member is issued an RFID card that has been prepared to identify the member
+and to ensure that cards can be revoked and/replaced.  Membership information relevant
+to card issuance and to member check-in is supplied via real-time
+query of the Maker Nexus CRM system which uses EZ Facility.  The code to access EZ Facility
+via their REST API has been broken out into separate functions so that it can be replaced
+by any suitable database.  Administrative utilities are also provided to facility recycling
+membership RFID cards and identifying the owner of a misplaced RFID card.
 
-Photon D0 --> breakout SDA with 5.6K pullup to Photon 3.3 volts
+This project uses a Particle Argon; however, a Xenon should also work in a Particle Mesh configuration.  
+The access control system is based upon Mifare Classic 1K RFID cards that are written to/read from
+using a PN532-based MFC/RFID breakout board.  The Adafruit PN532 library is used to supply
+the underlying communication support betwen the Particle device and the RFID card.
 
-Photon D1 --> breakout SCL with 5.6K pullup to Photon 3.3 volts
+Mifare Classic 1K cards have been chosen because they are inexpensive and widely available on the Internet.
+These cards are older technology and not very secure.  However, we have deemed them to be secure 
+enough for this application.  One sector of the card is chosen for this application and the sector encryption
+keys and block access control bits are changed to make the card data secure from casual inspection.  The
+remaining sectors of the card can be used for other applications, e.g. vending machine credits or special room
+access.
 
-Photon D3 --> breakout IRQ (no pullup)
 
-Photon D4 --> unconnected; reserved for RST
-
-Breakout board jumpers for I2C:  SEL 1 is OFF; SEL 0 is ON
-
-Breakout board +5 volts is connected to Photon VIN
-
-Breakout board GND and both Photon GNDs are all connected
 ## Folders:
 ### PN532 tests:  
 basic tests of the integration with the breakout board
@@ -31,6 +35,12 @@ Argon and Xenon.
 ### EZF tests: 
 basic tests of webhook integration from Particle cloud to
 Maker Nexus EZFacility account.  [Nothing here at present].
+### Hardware: 
+hardware design (schematic and Eagle board file), CAD diagrams, and parts list
+are included in this folder.
+### checkinfirmware: 
+source code for Particle firmware for card reading and check-in/access control
+functions.
 
 
 
