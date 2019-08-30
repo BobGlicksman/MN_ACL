@@ -148,8 +148,9 @@ const int SECTOR = 3;	// Sector 0 is manufacturer data and sector 1 is real MN d
 // Encryption keys for testing
 uint8_t DEFAULT_KEY_A[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 uint8_t DEFAULT_KEY_B[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
-uint8_t MN_SECRET_KEY_A[6] = { 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5 };
-uint8_t MN_SECRET_KEY_B[6] = { 0xB0, 0xB1, 0xB2, 0xB3, 0xB4, 0xB5 };
+uint8_t MN_SECRET_KEY_A[6] = {0,0,0,0,0,0}; //{ 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5 };
+uint8_t MN_SECRET_KEY_B[6] = {0,0,0,0,0,0}; // { 0xB0, 0xB1, 0xB2, 0xB3, 0xB4, 0xB5 };
+
 
 // Access control bits for a sector
     // the default is block 0, 1, and 2 of the sector == 0x00
@@ -461,6 +462,45 @@ void ezfReceiveCheckInToken (const char *event, const char *data)  {
    
     }
 }
+
+// ------------- GET RFID KEYS -----------------
+
+// Get RFID Read Key
+void responseRFIDReadKey(){ //(const char *event, const char *data)) {
+    
+    const int capacity = JSON_OBJECT_SIZE(1) + 20;
+    StaticJsonDocument<100> docJSON;
+
+    //const char* json = "{\"WriteKey\":\"áíóúñÑ\"}";  // for testing
+    const char* json = "{\"ReadKey\":\"░▒▓│┤╡\"}"; // for testing
+
+    //deserializeJson(doc, json);
+    
+    // will it parse?
+    DeserializationError err = deserializeJson(docJSON, json ); // XXX
+    JSONParseError =  err.c_str();
+    if (!err) {
+        //We have valid JSON, get the key
+        const uint8_t WriteKey[6] = {0,0,0,0,0,0};// = docJSON["WriteKey"][1]; // "áíóúñÑ"
+        for (int i=0;i<6;i++) {
+            MN_SECRET_KEY_A[i] = docJSON["WriteKey"][i];
+            MN_SECRET_KEY_B[i] = docJSON["WriteKey"][i];  
+            MN_SECRET_KEY_A[i] = "áíóúñÑ"[i]; // xxx 
+        }
+            
+
+        writeToLCD("key parsed", " ");
+        buzzerGoodBeep();
+        debugEvent ("key " + String("áíóúñÑ") + " " + (char*) MN_SECRET_KEY_A + " " + (char*) MN_SECRET_KEY_B);
+   
+    } else {
+        writeToLCD("KEY error",JSONParseError);
+        buzzerBadBeep();
+        delay(5000);
+    }
+
+}
+
 
 // ------------ ClientInfo Utility Functions -------------------
 
@@ -1344,7 +1384,7 @@ void setup() {
     
     nfc.begin(); 
  
-    uint32_t versiondata;
+    uint32_t versiondata = 0;
     
     do {
         versiondata = nfc.getFirmwareVersion();
@@ -1354,7 +1394,7 @@ void setup() {
             delay(1000);
         }
     }  while (!versiondata);
-            
+
     message += "Found chip PN532; firmware version: ";
     message += (versiondata>>16) & 0xFF;
     message += '.';
@@ -1396,6 +1436,9 @@ void setup() {
     
     success = Particle.function("PackagesByClientID",ezfGetPackagesByClientID);
     Particle.subscribe(System.deviceID() + "ezfGetPackagesByClientID",ezfReceivePackagesByClientID, MY_DEVICES);
+
+    // xxx Particle.subscribe(System.deviceID() + "RFIDReadKey", responseRFIDReadKey, MY_DEVICES);
+    responseRFIDReadKey();
 
     System.on(firmware_update, firmwareupdatehandler);
 
