@@ -148,8 +148,11 @@ const int SECTOR = 3;	// Sector 0 is manufacturer data and sector 1 is real MN d
 // Encryption keys for testing
 uint8_t DEFAULT_KEY_A[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 uint8_t DEFAULT_KEY_B[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
-uint8_t MN_SECRET_KEY_A[6] = {0,0,0,0,0,0}; //{ 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5 };
-uint8_t MN_SECRET_KEY_B[6] = {0,0,0,0,0,0}; // { 0xB0, 0xB1, 0xB2, 0xB3, 0xB4, 0xB5 };
+uint8_t TESTKEYA[6] = { 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5 };
+uint8_t TESTKEYB[6] = { 0xB0, 0xB1, 0xB2, 0xB3, 0xB4, 0xB5 };
+uint8_t g_secretKeyA[6] = {0,0,0,0,0,0}; 
+uint8_t g_secretKeyB[6] = {0,0,0,0,0,0};  
+bool g_secretKeysValid = false;
 
 
 // Access control bits for a sector
@@ -465,40 +468,37 @@ void ezfReceiveCheckInToken (const char *event, const char *data)  {
 
 // ------------- GET RFID KEYS -----------------
 
-// Get RFID Read Key
-void responseRFIDReadKey(){ //(const char *event, const char *data)) {
-    
-    const int capacity = JSON_OBJECT_SIZE(1) + 20;
-    StaticJsonDocument<100> docJSON;
+// Get RFID Keys
+void responseRFIDKeys(const char *event, const char *data) {
 
-    //const char* json = "{\"WriteKey\":\"áíóúñÑ\"}";  // for testing
-    const char* json = "{\"ReadKey\":\"░▒▓│┤╡\"}"; // for testing
+    g_secretKeysValid = false;
+    const int capacity = JSON_ARRAY_SIZE(6) + JSON_OBJECT_SIZE(1) + 10;
+    StaticJsonDocument<400> docJSON;
 
-    //deserializeJson(doc, json);
     
+    debugEvent("got rfid json"); //xxx :" + String(data)");
     // will it parse?
-    DeserializationError err = deserializeJson(docJSON, json ); // XXX
+    DeserializationError err = deserializeJson(docJSON, data ); // XXX
     JSONParseError =  err.c_str();
     if (!err) {
         //We have valid JSON, get the key
-        const uint8_t WriteKey[6] = {0,0,0,0,0,0};// = docJSON["WriteKey"][1]; // "áíóúñÑ"
+        JsonArray WriteKey = docJSON["WriteKey"];
+        JsonArray ReadKey = docJSON["ReadKey"];
         for (int i=0;i<6;i++) {
-            MN_SECRET_KEY_A[i] = docJSON["WriteKey"][i];
-            MN_SECRET_KEY_B[i] = docJSON["WriteKey"][i];  
-            MN_SECRET_KEY_A[i] = "áíóúñÑ"[i]; // xxx 
+            g_secretKeyA[i] = WriteKey[i];
+            g_secretKeyB[i] = ReadKey[i];
+            g_secretKeysValid = true;
         }
             
-
         writeToLCD("key parsed", " ");
         buzzerGoodBeep();
-        debugEvent ("key " + String("áíóúñÑ") + " " + (char*) MN_SECRET_KEY_A + " " + (char*) MN_SECRET_KEY_B);
-   
+       
     } else {
         writeToLCD("KEY error",JSONParseError);
         buzzerBadBeep();
         delay(5000);
     }
-
+    
 }
 
 
@@ -1191,7 +1191,7 @@ uint8_t testCard() {
         
         // reset by reading the targe ID again
         nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength);
-        success = authenticateBlock(2, 0, MN_SECRET_KEY_A);        
+        success = authenticateBlock(2, 0, g_secretKeyA);        
         if(success == true) {   // we can assume an MN formatted card
             #ifdef TEST
                 Serial.println("MN secret key A authenticated.  Assume NM formatted card ...");
@@ -1284,7 +1284,7 @@ eRetStatus readTheCard() {
     } else  {  // MN formatted card
 
         // now read the data using MN Key and store in g_cardData
-        readBlockData(dataBlock, 0,  0, MN_SECRET_KEY_A);
+        readBlockData(dataBlock, 0,  0, g_secretKeyA);
         Serial.println("The clientID data is:");
         nfc.PrintHex(dataBlock, 16);
         Serial.println("");
@@ -1297,7 +1297,7 @@ eRetStatus readTheCard() {
         g_cardData.clientID = theClientID.toInt();
 
         // read UID and store in g_cardData
-        readBlockData(dataBlock, 1,  0, MN_SECRET_KEY_A);
+        readBlockData(dataBlock, 1,  0, g_secretKeyA);
         Serial.println("The MN UID data is:");
         nfc.PrintHex(dataBlock, 16); 
 
@@ -1437,8 +1437,8 @@ void setup() {
     success = Particle.function("PackagesByClientID",ezfGetPackagesByClientID);
     Particle.subscribe(System.deviceID() + "ezfGetPackagesByClientID",ezfReceivePackagesByClientID, MY_DEVICES);
 
-    // xxx Particle.subscribe(System.deviceID() + "RFIDReadKey", responseRFIDReadKey, MY_DEVICES);
-    responseRFIDReadKey();
+    Particle.subscribe(System.deviceID() + "RFIDKeys", responseRFIDKeys, MY_DEVICES);
+ 
 
     System.on(firmware_update, firmwareupdatehandler);
 
@@ -1475,12 +1475,38 @@ void setup() {
 // Make sure none of your code delays or blocks for too long (like more than 5 seconds), or weird things can happen.
 void loop() {
     
-    enum mlState {mlsIDLE, mlsCARDPRESENT, mlsCARDOK, mlsREQUESTTOKEN, mlsWAITFORTOKEN, mlsASKFORCLIENTINFO, mlsWAITFORCLIENTINFO, mlsCHECKINGIN, mlsERROR};
+    enum mlState {mlsREQUESTRFIDKEYS, mlsWAITFORKEYS, mlsIDLE, mlsCARDPRESENT, mlsCARDOK, mlsREQUESTTOKEN, mlsWAITFORTOKEN, mlsASKFORCLIENTINFO, mlsWAITFORCLIENTINFO, mlsCHECKINGIN, mlsERROR};
     
-    static mlState mainloopState = mlsIDLE;
+    static mlState mainloopState = mlsREQUESTRFIDKEYS;
     static unsigned long processStartMilliseconds = 0; 
     
     switch (mainloopState) {
+    case mlsREQUESTRFIDKEYS:
+        writeToLCD("Requesting Keys", " ");
+        g_secretKeysValid = false;
+        Particle.publish("RFIDKeys", "junk1", PRIVATE);
+        processStartMilliseconds = millis();
+        mainloopState = mlsWAITFORKEYS;
+
+// xxx debugging since we are not getting called back from the webhook for some reason...
+        responseRFIDKeys("junk", "{\"WriteKey\":[160,161,162,163,164,165],\"ReadKey\":[176,177,178,179,180,181] }");
+
+        break;
+    case mlsWAITFORKEYS:
+        if(g_secretKeysValid) {
+            //we have the keys
+            mainloopState = mlsIDLE; // initialization is over
+        } else {
+            // timer to limit this state
+            if (millis() - processStartMilliseconds > 15000) {
+                debugEvent("took too long to get RFID Keys, init fails, all stop.");
+                writeToLCD("Timeout on Keys", "fatal error");
+                buzzerBadBeep();
+                mainloopState = mlsERROR;
+            }
+        //Otherwise we stay in this state
+        }
+        break;
     case mlsIDLE: {
         digitalWrite(READY_LED,HIGH);
         eRetStatus retStatus = readTheCard();
