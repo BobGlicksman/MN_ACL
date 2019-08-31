@@ -112,7 +112,13 @@
  *      LCD messages when errors occur
  *      More beeps in places with errors
  *      Member name now displayed on successful checkin         
- * 
+ * version 1.05: 9/1/2019
+ *      Cloud function SetDeviceType must be called to set up machine. Values are in eDeviceConfigType
+ *          Device Type is shown on LCD at end of setup.
+ *      Established structure in loop() to handle different device configurations
+ *      Added code to get RFID keys from Particle cloud, but the device is not receiving the cloud 
+ *          response for some reason. Seach this code for "xxx responseRFIDKeys" to see the work around.
+ *      
  * 
 ************************************************************************/
 
@@ -141,6 +147,9 @@
 #define ADMIT_LED A4
 #define REJECT_LED A5
 #define BUZZER_PIN D2
+#define MN_EPROM_ID 453214  //This value is written to the EEPROM to show that the
+                            //data is ours. Change this and every device will have to
+                            //be configured again.
 
 // Sector to use for testing
 const int SECTOR = 3;	// Sector 0 is manufacturer data and sector 1 is real MN data
@@ -148,8 +157,12 @@ const int SECTOR = 3;	// Sector 0 is manufacturer data and sector 1 is real MN d
 // Encryption keys for testing
 uint8_t DEFAULT_KEY_A[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 uint8_t DEFAULT_KEY_B[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
-uint8_t MN_SECRET_KEY_A[6] = { 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5 };
-uint8_t MN_SECRET_KEY_B[6] = { 0xB0, 0xB1, 0xB2, 0xB3, 0xB4, 0xB5 };
+uint8_t TESTKEYA[6] = { 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5 };
+uint8_t TESTKEYB[6] = { 0xB0, 0xB1, 0xB2, 0xB3, 0xB4, 0xB5 };
+uint8_t g_secretKeyA[6] = {0,0,0,0,0,0}; 
+uint8_t g_secretKeyB[6] = {0,0,0,0,0,0};  
+bool g_secretKeysValid = false;
+
 
 // Access control bits for a sector
     // the default is block 0, 1, and 2 of the sector == 0x00
@@ -203,6 +216,22 @@ int debug4 = 0;
 int debug5 = 0;
 
 String g_packages = ""; // Not implemented yet
+
+typedef enum eDeviceConfigType {
+    UNDEFINED = 0,
+    CHECK_IN = 1,
+    ADMIN_DEV = 2,
+    BOSSLASER = 3,
+    WOODSHOP = 4
+} eDeviceConfigType;
+
+// you can add more fields to the end of this structure, just don't change
+// the order or size of any existing fields.
+struct EEPROMdata {
+    int MN_Identifier = 11111111;  // set to MN_EPROM_ID when we write to EEPROM
+    eDeviceConfigType deviceType = UNDEFINED;  // Hold the value that drives the behavior of 
+                         // this device. Set via Cloud Function. 
+} EEPROMdata;
 
 struct struct_cardData {
     int clientID = 0;
@@ -272,6 +301,54 @@ char * strcat_safe( const char *str1, const char *str2 )
 
     return finalString;
 }  
+
+// Write to the EEPROM 
+//
+// 
+void EEPROMWrite () {
+    int addr = 0;
+    EEPROMdata.MN_Identifier = MN_EPROM_ID;
+    EEPROM.put(addr, EEPROMdata);
+}
+
+// Read from EEPROM
+//
+//
+void EEPROMRead() {
+    int addr = 0;
+    EEPROM.get(addr,EEPROMdata);
+    if (EEPROMdata.MN_Identifier != MN_EPROM_ID) {
+        EEPROMdata.deviceType = UNDEFINED;
+    }
+}
+
+// Convert eDeviceConfigType to human readable for LCD
+//
+String deviceTypeToString(eDeviceConfigType deviceType){
+    String msg = "";
+    switch (deviceType) {
+    case UNDEFINED:
+        msg = "Undefined";
+        break;
+    case CHECK_IN:
+        msg = "Check In";
+        break;
+    case ADMIN_DEV:
+        msg = "Admin";
+        break;
+    case BOSSLASER:
+        msg = "BossLaser";
+        break;
+    case WOODSHOP:
+        msg = "Woodshop";
+        break;
+    default:
+        msg = "ERR: UNKNOWN";
+        break;
+    }
+    return msg;
+} 
+
 
 // writeToLCD
 // pass in "","" to clear screen 
@@ -411,7 +488,23 @@ void debugEvent (String message) {
     }
 }
 
+// ------------- Set Device Type ---------
+// Called with a number to set device type to determine behavior
+// Valid values are in eDeviceConfigType
+//
+int cloudSetDeviceType(String data) {
 
+    int deviceType = data.toInt();
+
+    if (deviceType) {
+        EEPROMdata.deviceType = (eDeviceConfigType) deviceType;
+        EEPROMWrite();
+        return 0;
+    }
+
+    return 1;
+
+}
 
 // ------------- Get Authorization Token ----------------
 
@@ -461,6 +554,42 @@ void ezfReceiveCheckInToken (const char *event, const char *data)  {
    
     }
 }
+
+// ------------- GET RFID KEYS -----------------
+
+// Get RFID Keys
+void responseRFIDKeys(const char *event, const char *data) {
+
+    g_secretKeysValid = false;
+    const int capacity = JSON_ARRAY_SIZE(6) + JSON_OBJECT_SIZE(1) + 10;
+    StaticJsonDocument<400> docJSON;
+
+    
+    debugEvent("got rfid json"); //xxx :" + String(data)");
+    // will it parse?
+    DeserializationError err = deserializeJson(docJSON, data ); // XXX
+    JSONParseError =  err.c_str();
+    if (!err) {
+        //We have valid JSON, get the key
+        JsonArray WriteKey = docJSON["WriteKey"];
+        JsonArray ReadKey = docJSON["ReadKey"];
+        for (int i=0;i<6;i++) {
+            g_secretKeyA[i] = WriteKey[i];
+            g_secretKeyB[i] = ReadKey[i];
+            g_secretKeysValid = true;
+        }
+            
+        writeToLCD("key parsed", " ");
+        buzzerGoodBeep();
+       
+    } else {
+        writeToLCD("KEY error",JSONParseError);
+        buzzerBadBeep();
+        delay(5000);
+    }
+    
+}
+
 
 // ------------ ClientInfo Utility Functions -------------------
 
@@ -1151,7 +1280,7 @@ uint8_t testCard() {
         
         // reset by reading the targe ID again
         nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength);
-        success = authenticateBlock(2, 0, MN_SECRET_KEY_A);        
+        success = authenticateBlock(2, 0, g_secretKeyA);        
         if(success == true) {   // we can assume an MN formatted card
             #ifdef TEST
                 Serial.println("MN secret key A authenticated.  Assume NM formatted card ...");
@@ -1244,7 +1373,7 @@ eRetStatus readTheCard() {
     } else  {  // MN formatted card
 
         // now read the data using MN Key and store in g_cardData
-        readBlockData(dataBlock, 0,  0, MN_SECRET_KEY_A);
+        readBlockData(dataBlock, 0,  0, g_secretKeyA);
         Serial.println("The clientID data is:");
         nfc.PrintHex(dataBlock, 16);
         Serial.println("");
@@ -1257,7 +1386,7 @@ eRetStatus readTheCard() {
         g_cardData.clientID = theClientID.toInt();
 
         // read UID and store in g_cardData
-        readBlockData(dataBlock, 1,  0, MN_SECRET_KEY_A);
+        readBlockData(dataBlock, 1,  0, g_secretKeyA);
         Serial.println("The MN UID data is:");
         nfc.PrintHex(dataBlock, 16); 
 
@@ -1299,145 +1428,42 @@ eRetStatus readTheCard() {
     return returnStatus;
     
 }
-
-
-
-
-
-// --------------------- SETUP -------------------
-// This routine runs only once upon reset
-void setup() {
-
-  // Initialize D0 + D7 pin as output
-  // It's important you do this here, inside the setup() function rather than outside it or in the loop function.
-    pinMode(led, OUTPUT);
-    pinMode(led2, OUTPUT);
+// ---------------------- LOOP FOR CHECKIN ---------------------
+// ----------------------                  ----------------------
+// This function is called from main loop when configured for Check In station. 
+void loopCheckIn() {    
+    enum mlState {mlsREQUESTRFIDKEYS, mlsWAITFORKEYS, mlsIDLE, mlsCARDPRESENT, mlsCARDOK, mlsREQUESTTOKEN, mlsWAITFORTOKEN, mlsASKFORCLIENTINFO, mlsWAITFORCLIENTINFO, mlsCHECKINGIN, mlsERROR};
     
-    pinMode(READY_LED, OUTPUT);
-    pinMode(ADMIT_LED, OUTPUT);
-    pinMode(REJECT_LED, OUTPUT);
-    pinMode(BUZZER_PIN, OUTPUT);
-    pinMode(ONBOARD_LED_PIN, OUTPUT);   // the D7 LED
-    
-    digitalWrite(READY_LED, LOW);
-    digitalWrite(ADMIT_LED, LOW);
-    digitalWrite(REJECT_LED, LOW);
-    digitalWrite(BUZZER_PIN, LOW);
-    digitalWrite(ONBOARD_LED_PIN,LOW);
- 
-#ifdef LCD_PRESENT
-    lcd.begin(16,2);
-#endif
-    writeToLCD("MN Checkin","StartUp");
-#ifdef TEST
-    delay(5000);    // delay to get putty up
-    Serial.println("trying to connect ....");
-#endif
-
-#ifdef RFID_READER_PRESENT 
-
-    writeToLCD("Initializing","RFID Reader");
-    // ------ RFID SetUp
-    pinMode(IRQ_PIN, INPUT);     // IRQ pin from PN532
-    //pinMode(RST_PIN, OUTPUT);    // reserved for PN532 RST -- not used at this time
-
-    
-    nfc.begin(); 
- 
-    uint32_t versiondata;
-    
-    do {
-        versiondata = nfc.getFirmwareVersion();
-        if (!versiondata) {             
-            Serial.println("no board");
-            writeToLCD("Setup error","NFC board error");
-            delay(1000);
-        }
-    }  while (!versiondata);
-            
-    message += "Found chip PN532; firmware version: ";
-    message += (versiondata>>16) & 0xFF;
-    message += '.';
-    message += (versiondata>>8) & 0xFF;
-    Serial.println(message);
-    
-    // now start up the card reader
-    nfc.SAMConfig();
-    
-#endif
-
-    // ------- CheckIn Setup
-
-    writeToLCD("Initializing","Particle Cloud");
-
-    Particle.variable ("ClientID", g_clientInfo.clientID);
-    Particle.variable ("RFIDCardKey", g_clientInfo.RFIDCardKey);
-    Particle.variable ("ContractStatus",g_clientInfo.contractStatus);
-    Particle.variable ("g_Packages",g_packages);
-    Particle.variable ("recentErrors",g_recentErrors);
-    
-    Particle.variable ("JSONParseError", JSONParseError);
-      
-    Particle.variable ("debug2", debug2);
-    Particle.variable ("debug3", debug3);
-    Particle.variable ("debug4", debug4);
- 
-    int success = Particle.function("RFIDCardRead", RFIDCardReadCloud);
-    if (success) {}
-
-    success = Particle.function("GetCheckInToken", ezfGetCheckInTokenCloud);
-    Particle.subscribe(System.deviceID() + "ezfCheckInToken", ezfReceiveCheckInToken, MY_DEVICES);
-  
-    success = Particle.function("ClientByMemberNumber", ezfClientByMemberNumber);
-    Particle.subscribe(System.deviceID() + "ezfClientByMemberNumber", ezfReceiveClientByMemberNumber, MY_DEVICES);
-      
-    success = Particle.function("ClientByClientID", ezfClientByClientIDCloud);
-    Particle.subscribe(System.deviceID() + "ezfClientByClientID", ezfReceiveClientByClientID, MY_DEVICES);
-    
-    success = Particle.function("PackagesByClientID",ezfGetPackagesByClientID);
-    Particle.subscribe(System.deviceID() + "ezfGetPackagesByClientID",ezfReceivePackagesByClientID, MY_DEVICES);
-
-    System.on(firmware_update, firmwareupdatehandler);
-
-    //Show all lights
-    writeToLCD("Init all LEDs","should blink");
-    digitalWrite(READY_LED,HIGH);
-    digitalWrite(ADMIT_LED,HIGH);
-    digitalWrite(REJECT_LED,HIGH);
-    writeToLCD("XXXXXXXXXXXXXXXX","XXXXXXXXXXXXXXXX");
-    delay(1000);
-    writeToLCD("","");
-    digitalWrite(READY_LED,LOW);
-    digitalWrite(ADMIT_LED,LOW);
-    digitalWrite(REJECT_LED,LOW);
-
-    // Signal ready to go
-    writeToLCD("MN Checkin","Setup Done");
-    buzzerGoodBeeps2();
-    //flash the D7 LED twice
-    for (int i = 0; i < 2; i++) {
-        digitalWrite(ONBOARD_LED_PIN, HIGH);
-        delay(500);
-        digitalWrite(ONBOARD_LED_PIN, LOW);
-        delay(500);
-    } 
-
-
-}
-
-
-
-// This routine gets called repeatedly, like once every 5-15 milliseconds.
-// Spark firmware interleaves background CPU activity associated with WiFi + Cloud activity with your code. 
-// Make sure none of your code delays or blocks for too long (like more than 5 seconds), or weird things can happen.
-void loop() {
-    
-    enum mlState {mlsIDLE, mlsCARDPRESENT, mlsCARDOK, mlsREQUESTTOKEN, mlsWAITFORTOKEN, mlsASKFORCLIENTINFO, mlsWAITFORCLIENTINFO, mlsCHECKINGIN, mlsERROR};
-    
-    static mlState mainloopState = mlsIDLE;
+    static mlState mainloopState = mlsREQUESTRFIDKEYS;
     static unsigned long processStartMilliseconds = 0; 
     
     switch (mainloopState) {
+    case mlsREQUESTRFIDKEYS:
+        writeToLCD("Requesting Keys", " ");
+        g_secretKeysValid = false;
+        Particle.publish("RFIDKeys", "junk1", PRIVATE);
+        processStartMilliseconds = millis();
+        mainloopState = mlsWAITFORKEYS;
+
+// xxx responseRFIDKeys debugging since we are not getting called back from the webhook for some reason...
+        responseRFIDKeys("junk", "{\"WriteKey\":[160,161,162,163,164,165],\"ReadKey\":[176,177,178,179,180,181] }");
+
+        break;
+    case mlsWAITFORKEYS:
+        if(g_secretKeysValid) {
+            //we have the keys
+            mainloopState = mlsIDLE; // initialization is over
+        } else {
+            // timer to limit this state
+            if (millis() - processStartMilliseconds > 15000) {
+                debugEvent("took too long to get RFID Keys, init fails, all stop.");
+                writeToLCD("Timeout on Keys", "fatal error");
+                buzzerBadBeep();
+                mainloopState = mlsERROR;
+            }
+        //Otherwise we stay in this state
+        }
+        break;
     case mlsIDLE: {
         digitalWrite(READY_LED,HIGH);
         eRetStatus retStatus = readTheCard();
@@ -1547,3 +1573,152 @@ void loop() {
     debugEvent("");  // need this to pump the debug event process
 
 }
+
+
+
+
+// --------------------- SETUP -------------------
+// This routine runs only once upon reset
+void setup() {
+
+  // Initialize D0 + D7 pin as output
+  // It's important you do this here, inside the setup() function rather than outside it or in the loop function.
+    pinMode(led, OUTPUT);
+    pinMode(led2, OUTPUT);
+    
+    pinMode(READY_LED, OUTPUT);
+    pinMode(ADMIT_LED, OUTPUT);
+    pinMode(REJECT_LED, OUTPUT);
+    pinMode(BUZZER_PIN, OUTPUT);
+    pinMode(ONBOARD_LED_PIN, OUTPUT);   // the D7 LED
+    
+    digitalWrite(READY_LED, LOW);
+    digitalWrite(ADMIT_LED, LOW);
+    digitalWrite(REJECT_LED, LOW);
+    digitalWrite(BUZZER_PIN, LOW);
+    digitalWrite(ONBOARD_LED_PIN,LOW);
+ 
+#ifdef LCD_PRESENT
+    lcd.begin(16,2);
+#endif
+    writeToLCD("MN Checkin","StartUp");
+#ifdef TEST
+    delay(5000);    // delay to get putty up
+    Serial.println("trying to connect ....");
+#endif
+
+#ifdef RFID_READER_PRESENT 
+
+    writeToLCD("Initializing","RFID Reader");
+    // ------ RFID SetUp
+    pinMode(IRQ_PIN, INPUT);     // IRQ pin from PN532
+    //pinMode(RST_PIN, OUTPUT);    // reserved for PN532 RST -- not used at this time
+
+    
+    nfc.begin(); 
+ 
+    uint32_t versiondata = 0;
+    
+    do {
+        versiondata = nfc.getFirmwareVersion();
+        if (!versiondata) {             
+            Serial.println("no board");
+            writeToLCD("Setup error","NFC board error");
+            delay(1000);
+        }
+    }  while (!versiondata);
+
+    message += "Found chip PN532; firmware version: ";
+    message += (versiondata>>16) & 0xFF;
+    message += '.';
+    message += (versiondata>>8) & 0xFF;
+    Serial.println(message);
+    
+    // now start up the card reader
+    nfc.SAMConfig();
+    
+#endif
+
+    // ------- CheckIn Setup
+
+    writeToLCD("Initializing","Particle Cloud");
+
+    Particle.variable ("ClientID", g_clientInfo.clientID);
+    Particle.variable ("RFIDCardKey", g_clientInfo.RFIDCardKey);
+    Particle.variable ("ContractStatus",g_clientInfo.contractStatus);
+    Particle.variable ("g_Packages",g_packages);
+    Particle.variable ("recentErrors",g_recentErrors);
+    
+    Particle.variable ("JSONParseError", JSONParseError);
+      
+    Particle.variable ("debug2", debug2);
+    Particle.variable ("debug3", debug3);
+    Particle.variable ("debug4", debug4);
+ 
+    int success = Particle.function("RFIDCardRead", RFIDCardReadCloud);
+    if (success) {}; // xxx
+
+    success = Particle.function("SetDeviceType", cloudSetDeviceType);
+
+    success = Particle.function("GetCheckInToken", ezfGetCheckInTokenCloud);
+    Particle.subscribe(System.deviceID() + "ezfCheckInToken", ezfReceiveCheckInToken, MY_DEVICES);
+  
+    success = Particle.function("ClientByMemberNumber", ezfClientByMemberNumber);
+    Particle.subscribe(System.deviceID() + "ezfClientByMemberNumber", ezfReceiveClientByMemberNumber, MY_DEVICES);
+      
+    success = Particle.function("ClientByClientID", ezfClientByClientIDCloud);
+    Particle.subscribe(System.deviceID() + "ezfClientByClientID", ezfReceiveClientByClientID, MY_DEVICES);
+    
+    success = Particle.function("PackagesByClientID",ezfGetPackagesByClientID);
+    Particle.subscribe(System.deviceID() + "ezfGetPackagesByClientID",ezfReceivePackagesByClientID, MY_DEVICES);
+
+    Particle.subscribe(System.deviceID() + "RFIDKeys", responseRFIDKeys, MY_DEVICES);
+ 
+    // read EEPROM data for device type 
+    EEPROMRead();
+
+    System.on(firmware_update, firmwareupdatehandler);
+
+    //Show all lights
+    writeToLCD("Init all LEDs","should blink");
+    digitalWrite(READY_LED,HIGH);
+    digitalWrite(ADMIT_LED,HIGH);
+    digitalWrite(REJECT_LED,HIGH);
+    writeToLCD("XXXXXXXXXXXXXXXX","XXXXXXXXXXXXXXXX");
+    delay(1000);
+    writeToLCD("","");
+    digitalWrite(READY_LED,LOW);
+    digitalWrite(ADMIT_LED,LOW);
+    digitalWrite(REJECT_LED,LOW);
+
+    // Signal ready to go
+    writeToLCD(deviceTypeToString(EEPROMdata.deviceType),"Setup Done");
+    buzzerGoodBeeps2();
+    //flash the D7 LED twice
+    for (int i = 0; i < 2; i++) {
+        digitalWrite(ONBOARD_LED_PIN, HIGH);
+        delay(500);
+        digitalWrite(ONBOARD_LED_PIN, LOW);
+        delay(500);
+    } 
+
+
+}
+
+
+// This routine gets called repeatedly, like once every 5-15 milliseconds.
+// Spark firmware interleaves background CPU activity associated with WiFi + Cloud activity with your code. 
+// Make sure none of your code delays or blocks for too long (like more than 5 seconds), or weird things can happen.
+void loop() {
+    switch (EEPROMdata.deviceType) {
+    case UNDEFINED:
+        break;
+    case CHECK_IN:
+        loopCheckIn();
+        break;
+    default:
+        break;
+    }   
+
+}
+

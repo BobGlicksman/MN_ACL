@@ -87,32 +87,15 @@ file.
 
 
 {
-    "event": "RFIDWriteKey",
-    "responseTopic": "{{PARTICLE_DEVICE_ID}}RFIDWriteKey",
-    "url": "https://postman-echo.com",
+    "event": "RFIDKeys",
+    "responseTopic": "{{PARTICLE_DEVICE_ID}}RFIDKeys",
+    "url": "https://postman-echo.com/get",
     "requestType": "GET",
     "noDefaults": true,
-    "rejectUnauthorized": true,
-    "responseTemplate": "{\"TheRFIDWriteKey\":\"YOUR KEY HERE\"}",
-    "headers": {
-        "Authorization": "Bearer {{{access_token}}}",
-        "Accept": "application/json",
-        "ez-page-number": "1"
-    }
-}
-
-{
-    "event": "RFIDReadKey",
-    "responseTopic": "{{PARTICLE_DEVICE_ID}}RFIDReadKey",
-    "url": "https://postman-echo.com",
-    "requestType": "GET",
-    "noDefaults": true,
-    "rejectUnauthorized": true,
-    "responseTemplate": "TheRFIDReadKey",
-    "headers": {
-        "Authorization": "Bearer {{{access_token}}}",
-        "Accept": "application/json",
-        "ez-page-number": "1"
+    "rejectUnauthorized": false,
+    "responseTemplate": "{\"WriteKey\":[160,161,162,163,164,165],\"ReadKey\":[176,177,178,179,180,181] }",
+    "query": {
+        "junk": "junk"
     }
 }
 
