@@ -1749,8 +1749,14 @@ void loopAdmin() {
 // This routine runs only once upon reset
 void setup() {
 
-  // Initialize D0 + D7 pin as output
-  // It's important you do this here, inside the setup() function rather than outside it or in the loop function.
+    System.on(firmware_update, firmwareupdatehandler);
+
+    // read EEPROM data for device type 
+    EEPROMRead();
+
+    // Initialize D0 + D7 pin as output
+    // It's important you do this here, inside the setup() function rather than outside it 
+    // or in the loop function.
     pinMode(led, OUTPUT);
     pinMode(led2, OUTPUT);
     
@@ -1770,6 +1776,7 @@ void setup() {
     lcd.begin(16,2);
 #endif
     writeToLCD("MN Checkin","StartUp");
+
 #ifdef TEST
     delay(5000);    // delay to get putty up
     Serial.println("trying to connect ....");
@@ -1781,7 +1788,6 @@ void setup() {
     // ------ RFID SetUp
     pinMode(IRQ_PIN, INPUT);     // IRQ pin from PN532
     //pinMode(RST_PIN, OUTPUT);    // reserved for PN532 RST -- not used at this time
-
     
     nfc.begin(); 
  
@@ -1806,49 +1812,46 @@ void setup() {
     nfc.SAMConfig();
     
 #endif
-
-    // ------- CheckIn Setup
-
+    
     writeToLCD("Initializing","Particle Cloud");
 
     Particle.variable ("ClientID", g_clientInfo.clientID);
-    Particle.variable ("RFIDCardKey", g_clientInfo.RFIDCardKey);
     Particle.variable ("ContractStatus",g_clientInfo.contractStatus);
-    Particle.variable ("g_Packages",g_packages);
     Particle.variable ("recentErrors",g_recentErrors);
-      
     Particle.variable ("JSONParseError", JSONParseError);
       
-    Particle.variable ("debug2", debug2);
-    Particle.variable ("debug3", debug3);
-    Particle.variable ("debug4", debug4);
- 
-    int success = Particle.function("RFIDCardRead", RFIDCardReadCloud);
-    if (success) {}; // xxx
+    int success = 0; 
+    if (success) {}; // xxx to remove warning, but should we check this below?
 
+    // The following are useful for debugging
+    //Particle.variable ("RFIDCardKey", g_clientInfo.RFIDCardKey);
+    //Particle.variable ("g_Packages",g_packages);
+    //success = Particle.function("GetCheckInToken", ezfGetCheckInTokenCloud);
+    //Particle.variable ("debug2", debug2);
+    //Particle.variable ("debug3", debug3);
+    //Particle.variable ("debug4", debug4);
+    success = Particle.function("ClientByMemberNumber", ezfClientByMemberNumber);
+    success = Particle.function("ClientByClientID", ezfClientByClientIDCloud);
+ 
+    // Used by all device types
     success = Particle.function("SetDeviceType", cloudSetDeviceType);
 
-    success = Particle.function("GetCheckInToken", ezfGetCheckInTokenCloud);
-    Particle.subscribe(System.deviceID() + "ezfCheckInToken", ezfReceiveCheckInToken, MY_DEVICES);
-  
-    success = Particle.function("ClientByMemberNumber", ezfClientByMemberNumber);
-    Particle.subscribe(System.deviceID() + "ezfClientByMemberNumber", ezfReceiveClientByMemberNumber, MY_DEVICES);
-      
-    success = Particle.function("ClientByClientID", ezfClientByClientIDCloud);
-    Particle.subscribe(System.deviceID() + "ezfClientByClientID", ezfReceiveClientByClientID, MY_DEVICES);
-    
-    success = Particle.function("PackagesByClientID",ezfGetPackagesByClientID);
-    Particle.subscribe(System.deviceID() + "ezfGetPackagesByClientID",ezfReceivePackagesByClientID, MY_DEVICES);
+    // Used to test CheckIn
+    success = Particle.function("RFIDCardRead", RFIDCardReadCloud);
 
+    // Needed for Checkin
+    Particle.subscribe(System.deviceID() + "ezfCheckInToken", ezfReceiveCheckInToken, MY_DEVICES);
+    Particle.subscribe(System.deviceID() + "ezfClientByMemberNumber", ezfReceiveClientByMemberNumber, MY_DEVICES);
+    Particle.subscribe(System.deviceID() + "ezfClientByClientID", ezfReceiveClientByClientID, MY_DEVICES);
     Particle.subscribe(System.deviceID() + "RFIDKeys", responseRFIDKeys, MY_DEVICES);
 
+    // Used by device types for machine usage permission validation
+    //success = Particle.function("PackagesByClientID",ezfGetPackagesByClientID);
+    //Particle.subscribe(System.deviceID() + "ezfGetPackagesByClientID",ezfReceivePackagesByClientID, MY_DEVICES);
+
+    // Used by Admin Device
     Particle.function("queryMember",queryMember);
     Particle.variable("queryMemberResult",g_queryMemberResult);
- 
-    // read EEPROM data for device type 
-    EEPROMRead();
-
-    System.on(firmware_update, firmwareupdatehandler);
 
     //Show all lights
     writeToLCD("Init all LEDs","should blink");
