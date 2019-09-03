@@ -7,18 +7,18 @@
  * administration.
  * 
  * (c) 2019, Team Practical Projects, Bob Glicksman, Jim Schrempp
- * version 1.0; by: Bob Glicksman; 8/31/19
+ * version 1.1; by: Bob Glicksman; 9/03/19
  * *****************************************************************************************/
 
 // Global variables
-String deviceInfo = "Firmware version 1.0. Last reset @ ";
+String deviceInfo = "Firmware version 1.1. Last reset @ ";
 String memberData = "";
 String cardInfo = "";
 
 void setup() {
     // Cloud vartiables for the app to read
     Particle.variable("deviceInfo", deviceInfo);
-    Particle.variable("memberData", memberData);
+    Particle.variable("queryMemberResult", memberData);
     Particle.variable("cardInfo", cardInfo);
     
     // Cloud functions for the app to call
@@ -61,65 +61,107 @@ int queryMember(String memberNumber)
 
     The return value is an int with the following encoding:
 
-	0 = member found and membership data is in the cloud variable.
-	1 = membership number incorrect (e.g. not a number)
-	2 = member not found in EZFacility
-	3 = more than one member found in EZfacility
-	4 = other error.
+    0 = query accepted
+	1 = query is underway
+	2 = query is done and results are in the cloud variable (including any error report)
+	3 = query was already underway, this query is rejected
+	4 = memberNumber was not a number or was 0
+	5 = other error, see LCD panel on device
 
-    Successful query will load the JSON representation of member data from EZ Facility into the cloud variable:
 
-	String memberInformation;
+    This function is called initially and if the return value is 0, it is called repeatedly on a timer
+    until the return value is > 1.  Successful query (return 2) will load the JSON representation of member 
+    data from EZ Facility into the cloud variable:
 
-        Where memberInformation is JSON formatted name:value pairs.  The GUI will present each 
+	String queryMemberResult;
+
+        Where queryMemberResult is JSON formatted name:value pairs.  The GUI will present each 
         JSON name as a literal and each JSON value next to the variable name.  An example of name:value pairs is:
 
-        	Name : Bob Glicksman
-        	ClientID : 12345678
-        	Status : Active
+        ErrorCode: 0
+	    ErrorMessage: OK
+        Name : Bob Glicksman
+	    ClientID : 12345678
+    	Status : Active
+
+    Where ErrorCode is 
+	    0 = member found and membership data is in the JSON.
+	    1 = member not found in EZFacility
+	    2 = more than one member found in EZfacility (this should be impossible)
+	    3 = other error.
+
+    ErrorMessage is a short string in English, suitable for display to a user.
+
 ************************************************************/
 int queryMember(String memberNumber) {
     // define some member data
-    String memberBob = "name: Bob Glicksman; clientID: 12345678; status: deadbeat";
-    String memberJim = "name: Jim Schrempp; clientID: 98765432; status: active";
-    static uint8_t errorCode = 0;
-    static bool lastData = false;
+    String memberBob = "{ErrorCode:0, ErrorMessage:OK, Name:Bob Glicksman, ClientID:12345678, Status:deadbeat}";
+    String memberJim = "{ErrorCode:0, ErrorMessage:OK, Name:Jim Schrempp, ClientID:98765432, Status:active}";
+    String somethingWrong = "{ErrorCode:1, ErrorMessage:member not found, Name:not found, ClientID:0, Status:none}";
+    static int state = 0;
+    static int resultCode = 2;  // initialize for good data
+    static bool lastData = false;   // toggle betweent wo good results
 
     Particle.publish("received member number = ", memberNumber, PRIVATE);
     
-    switch(errorCode++ % 5) {
-        case 0: // member data found; toggle the data reported in the global String
-            if(lastData == false) {
-                memberData = memberBob;
-                lastData = true;
-            }
-            else {
-                memberData = memberJim;
-                lastData = false;
-            }
+    switch(state) {
+        case 0: // initial call to fire things off
+            state = 1;
             return 0;
-            
-        case 1: // membership number incorrect
-            memberData = "ERROR: member number is incorrect. Please try again.";
+        
+        case 1: // waiting for a response to the query
+            state = 2;  // next time, there will be a response
             return 1;
-         
-        case 2: // member not found in EZ Facility
-            memberData = "ERROR: member not found in EZ Facility.  Please try again.";
-            return 2;
         
-        case 3: // more than one member matches the member number
-            memberData = "ERROR: member number is not unique in EZ Facility.  Please try again.";
-            return 3;
+        case 2: // query has completed, for good or bad
+            state = 0;  // next time will be a new query
             
-        case 4: // other error
-            memberData = "ERROR: an unidentifed error occurred.  Please try again.";
-            return 4;
+            switch(resultCode)  {   // send back different results for testing
+                case 2: // good data from query
+                    if(lastData == false) {
+                        memberData = memberBob;
+                        lastData = true;
+                    }
+                    else {
+                        memberData = memberJim;
+                        lastData = false;                   
+                    }
+                    
+                    resultCode = 3; // Sset the next result type
+                    state = 0;
+                    return 2;
+                    
+                case 3: // query underway, rejected
+                    memberData = "";
+                    resultCode = 4; // Sset the next result type
+                    state = 0;
+                    return 3;
+                    
+                case 4: // member not found or NAN
+                    memberData = somethingWrong;
+                    resultCode = 5;  // Sset the next result type
+                    state = 0;
+                    return 4;
+                    
+                case 5: // other error
+                    memberData = "";
+                    resultCode = 2;  // Sset the next result type
+                    state = 0;
+                    return 5;
+                    
+                default:    // should never get here
+                    memberData = "";
+                    resultCode = 2;  // Sset the next result type
+                    state = 0;
+                    return 5;               
+            }
         
-         default:
-            memberData = "CODE ERROR -- incorrect case";
-            return 4;
+        default:    // should never get here
+            resultCode = 2;  // set the next result type
+            state = 0;
+            return 5;            
     }
-   
+    
 }  // end of querymember()
 
 /**********************************************************
@@ -130,31 +172,24 @@ int burnCard(String clientID)
         
     The return value is an int with the following encoding:
 
-	0 = card burned successfully
-	1 = bad card; burn unsuccessful
-	2 = EZFacility issue; burn unsuccessful
-	3 = other error.
+	0 = function called successfully; follow instructions on the LCD
+    1 = failed to contact card reader/write
+
 ************************************************************/
 int burnCard(String clientID) {
-    static uint8_t errorCode = 0;
+    static int errorCode = 0;
 
     Particle.publish("received client ID = ", clientID, PRIVATE);
     
-    switch(errorCode++ % 4) {
+    switch(errorCode++ % 2) {
         case 0: // card burned successfully
             return 0;
             
         case 1: // bad card; burn unsuccessful
             return 1;
          
-        case 2: // EZFacility issue; burn unsuccessful
-            return 2;
-        
-        case 3: // other error
-            return 3;
-        
          default:   // should never get here
-            return 4;
+            return 1;
     }
 }   // end of burnCard
 
@@ -165,31 +200,24 @@ int resetCard(String dummy)
     
     The return value is an int with the following encoding:
 
-	0 = card successfully reset
-	1 = card is already factory fresh
-	2 = not an MN formatted card (unknown format); card not reset
-    3 = other error; card not reset
+    0 = function called; follow instructions on the LCD panel
+	1 = failure to contact the card reader/writer hardware
+
 ************************************************************/
 int resetCard(String dummy) {
-    static uint8_t errorCode = 0;
+    static int errorCode = 0;
 
     Particle.publish("reset card ", "called", PRIVATE);
     
-    switch(errorCode++ % 4) {
+    switch(errorCode++ % 2) {
         case 0: // card reset successfully
             return 0;
             
         case 1: // card is already factory fresh
             return 1;
          
-        case 2: // not an MN formatted card (unknown format); card not reset
-            return 2;
-        
-        case 3: // other error; card not reset
-            return 3;
-        
          default:   // should never get here
-            return 4;
+            return 1;
     }  
 }   // end of resetCard()
 
@@ -201,9 +229,12 @@ int identifyCard(String dummy)
 
     The return value is an int with the following encoding:
 
-	0 = card successfully identified
-	1 = card is factory fresh (blank)
-    2 = card not identified; card format unknown.
+    0 = card is MN formatted; query for member data initiated
+	1 = query is underway (return in one second)
+	2 = query complete; card owner data is in the string memberInformation
+	3 = card is factory fresh (blank)
+    4 = card not identified; card format unknown.
+
 
     Successful query will load the JSON representation of member data from 
         EZ Facility into the cloud variable:
@@ -214,43 +245,75 @@ int identifyCard(String dummy)
         each JSON name as a literal and each JSON value next to the variable name.  
         An example of name:value pairs is:
 
-    	Name : Bob Glicksman
+        ErrorCode: 0
+	    ErrorMessage: OK
+        Name : Bob Glicksman
         Member Number :  7654
-    	Card Status :  Current (alternative: Revoked)
+	    Card Status :  Current (alternative: Revoked)
+
 
 **********************************************************************/
 int identifyCard(String dummy) {
     // define some member data
-    String cardBob = "name: Bob Glicksman; member ID: 1234; status: currentt";
-    String cardJim = "name: Jim Schrempp; member ID: 8765; status: revoked";
-    static uint8_t errorCode = 0;
-    static bool lastData = false;
+    String cardBob = "{ErrorCode:0, ErrorMessage:OK, Name:Bob Glicksman, Member Number:1234, Card Status:current}";
+    String cardJim = "{ErrorCode:0, ErrorMessage:OK, Name:Jim Schrempp, Member Number:8765, Card Status:revoked}";
+    String somethingWrong = "{ErrorCode:3, ErrorMessage:member not found, Name:not found, Member Number:0, Card Status:bad card}";
+    static int state = 0;
+    static int resultCode = 2;  // initialize for good data
+    static bool lastData = false;   // toggle betweent wo good results
 
-    Particle.publish("card ", "identified", PRIVATE);
+    Particle.publish("identifyCard ", "called", PRIVATE);
     
-    switch(errorCode++ % 3) {
-        case 0: // card successfully identified; toggle the data reported in the global String
-            if(lastData == false) {
-                cardInfo = cardBob;
-                lastData = true;
-            }
-            else {
-                cardInfo = cardJim;
-                lastData = false;
-            }
+    switch(state) {
+        case 0: // initial call to fire things off
+            state = 1;
             return 0;
-            
-        case 1: // card is factory fresh (blank)
-            cardInfo = "ERROR: card is factory fresh (blank).";
+        
+        case 1: // waiting for a response to the query
+            state = 2;  // next time, there will be a response
             return 1;
-         
-        case 2: // card not identified; card format unknown.
-            memberData = "ERROR: card not identified; card format unknown.";
-            return 2;
-    
-         default:
-            memberData = "CODE ERROR -- incorrect case";
-            return 4;
+        
+        case 2: // query has completed, for good or bad
+            state = 0;  // next time will be a new query
+            
+            switch(resultCode)  {   // send back different results for testing
+                case 2: // query complete; card owner data is in the string memberInformation
+                    if(lastData == false) {
+                        cardInfo = cardBob;
+                        lastData = true;
+                    }
+                    else {
+                        cardInfo = cardJim;
+                        lastData = false;                   
+                    }
+                    
+                    resultCode = 3; // Sset the next result type
+                    state = 0;
+                    return 2;
+                    
+                case 3: // card is factory fresh (blank)
+                    cardInfo = "";
+                    resultCode = 4; // Sset the next result type
+                    state = 0;
+                    return 3;
+                    
+                case 4: // card not identified; card format unknown.
+                    cardInfo = somethingWrong;
+                    resultCode = 2;  // Sset the next result type
+                    state = 0;
+                    return 4;
+                    
+                default:    // should never get here
+                    cardInfo = "";
+                    resultCode = 2;  // Sset the next result type
+                    state = 0;
+                    return 4;               
+            }
+        
+        default:    // should never get here
+            resultCode = 2;  // set the next result type
+            state = 0;
+            return 5;            
     }
-}   // end of identifyCard()
-
+    
+}  // end of identifyCard()
