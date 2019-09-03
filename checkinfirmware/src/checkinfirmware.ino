@@ -120,7 +120,10 @@
  *          response for some reason. Seach this code for "xxx responseRFIDKeys" to see the work around.
  * version 1.06 9/1/2019
  *      Moved some common code into loop()
- *      Admin loop working, queryMember cloud function works.
+ *      Admin loop working
+ *      queryMember cloud function works. 
+ *      burnCard function works but does not update EZF with client unique code yet
+ *      
  * 
 ************************************************************************/
 
@@ -586,7 +589,7 @@ void responseRFIDKeys(const char *event, const char *data) {
             g_secretKeysValid = true;
         }
             
-        writeToLCD("key parsed", " ");
+        debugEvent("key parsed");
         buzzerGoodBeep();
        
     } else {
@@ -1314,14 +1317,6 @@ uint8_t testCard() {
 //
 
 eRetStatus readTheCard() {
-    
-  /*
-    if (g_cardData.clientID != 0) {
-        return COMPLETE_OK;
-    } else {
-        return IDLE;
-    }
-*/
 
     eRetStatus returnStatus = IN_PROCESS;
 
@@ -1362,18 +1357,23 @@ eRetStatus readTheCard() {
 
     Serial.print("\n\nCard is type ");
     if(cardType == 0) {
-         Serial.println("factory fresh\n");
+        Serial.println("factory fresh\n");
+        writeToLCD("Card is not MN","(fresh format)");
+        buzzerBadBeep();
+        delay(1000);
     } else if (cardType == 1) {
-         Serial.println("Maker Nexus formatted\n");        
+        Serial.println("Maker Nexus formatted\n");        
     } else {
         Serial.println("other card format\n");
+        writeToLCD("Card is not MN","(unknown card)");
+        buzzerBadBeep();
+        delay(1000);
     }
 
     if(cardType == 0) { // factory fresh card
 
-        // do nothing factory fresh code
-        writeToLCD("Card is not MN"," ");
-        buzzerBadBeep();
+        // do nothing factory fresh card
+  
         returnStatus = COMPLETE_FAIL;
 
     } else  {  // MN formatted card
@@ -1440,34 +1440,157 @@ eRetStatus readTheCard() {
 //  These functions are called by the Admin Android app
 //
 
-// queryMember
+// queryMember - cloud function
 //    memberNumber string to be lookup up in the CRM
+//    results will be in cloud variable g_queryMemberResult
 // returns:
-//  0 = command accepted
-//	1 = membership number incorrect (e.g. not a number)
-//  2 = previous admin command still running
-int queryMember(String memberNumber) {
+//  0 = query accepted
+//	1 = query is underway
+//	2 = query is done and results are in the cloud variable (including any error report)
+//	3 = query was already underway, this query is rejected
+//	4 = memberNumber was not a number or was 0
+//	5 = other error, see LCD panel on device
 
-    if (memberNumber.toInt()){
+int queryMember(String data ) {
+
+    int queryMemberNum = data.toInt();
+    if (queryMemberNum == 0){
+        // error, data is not a number or it really is 0
+        return 4;
+    }
+
+    switch (g_adminCommand) {
+    case acIDLE:
+
+        if ((g_clientInfo.isValid) && (g_clientInfo.memberNumber.startsWith(data))) {
+            // we have a result for this query data 
+            return 2;
+        }
+
+        // at this point we have a member number in data and we are acIDLE
         // clear the result and issue the command, the admin loop
         // will see this and take action 
         if (g_adminCommand == acIDLE) {
             g_queryMemberResult = "";
-            g_adminCommandData = memberNumber;
+            g_adminCommandData = data;
             g_adminCommand = acGETUSERINFO;
             return 0;
-        } else {
-            writeToLCD("Err: Admin CMD","acState not idle");
-            return 2;
         }
-    }
-    else {
-        return 1;
+        break;
+    
+    default:
+        // not acIDLE
+        if (g_adminCommandData.startsWith(data)) {
+            // asking for status on the query in progress
+            return 1;
+        } else {
+            // must be trying to start a new query, and we are busy
+            return 3;
+
+        }
+        break;
     }
 
+    return 5; // should never get here.
 };
 
+// ----------------------- burnCard ------------------------
+// burnCard - cloud function
+//     data is the string representation of the clientID for this card
+//         it must match the value in g_clientInfo
+// returns:
+//  	0 = card burned successfully
+//	    1 = error contacting the hardwarebad card; burn unsuccessful
+//	    2 = clientID does not match clientID from last queryMember call
+//      3 = data is not a number or is 0
 
+int burnCard(String data){
+
+    int clientID = data.toInt();
+    if (clientID == 0) {
+        // bad client ID 
+        return 3;
+    }
+
+    if (g_clientInfo.clientID != clientID) {
+        // this is not the clientID data we have
+        return 2;
+    }
+
+    // burn baby burn!
+    // All this needs to happen in 10 seconds or the cloud function will time out
+    
+    
+    // Wait for an ISO14443A type cards (Mifare, etc.).  When one is found
+    // 'uid' will be populated with the UID, and uidLength will indicate
+    Serial.println("waiting for ISO14443A card to be presented to the reader ...");
+    
+    writeToLCD("Place card on","reader to burn");
+    
+    while(!nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
+        // JUST WAIT FOR A CARD
+        // xxx need a timeout here
+    }
+    
+    // test the card to determine its type
+    uint8_t cardType = testCard();
+    debugEvent("card is type " + cardType);
+    Serial.print("\n\nCard is type ");
+    if(cardType == 0) {
+         Serial.println("factory fresh\n");
+        // change the keys to make this an MN card
+        bool cardIsReady = changeKeys(0, DEFAULT_KEY_A, g_secretKeyA, g_secretKeyB, MN_SECURE_ACB);
+        if (cardIsReady) {
+            Serial.println("\nMade fresh card to MN card OK\n");
+        } else {
+            return 1;
+        }
+    } else if (cardType == 1) {
+        Serial.println("Maker Nexus formatted\n");        
+    } else {
+        Serial.println("other\n");
+        writeToLCD("Unable to","use this card");
+        buzzerBadBeep();
+        return 1; // not factory fresh and we can't read it
+    }
+
+    // we now have an MN card 
+    writeToLCD("Going to","burn card"); //xxx
+    //delay(2000);
+            
+    // now write data to block 0 and 1 of the MN sector using secret key B
+    uint8_t clientIDChar[16];
+    for (int i=0; i<16; i++){
+        clientIDChar[i] = data.c_str()[i];
+    }
+
+    writeBlockData(clientIDChar, 0,  1, g_secretKeyB );
+    writeBlockData(TEST_PAT_2, 1,  1, g_secretKeyB);
+    /*
+    uint8_t dataBlock[] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15}; //  16 byte buffer to hold a block of data
+    // now read the data back using MN secret key A
+    readBlockData(dataBlock, 0,  0, g_secretKeyA);
+    Serial.println("The new block 0 data is:");
+    nfc.PrintHex(dataBlock, 16);
+    Serial.println("");
+    
+    readBlockData(dataBlock, 1,  0, g_secretKeyA);
+    Serial.println("The new block 1 data is:");
+    nfc.PrintHex(dataBlock, 16); 
+    
+    Serial.println("");
+    */
+    Serial.println("Remove card from reader ...");
+    writeToLCD("Card Done"," ");
+    buzzerGoodBeeps2();
+    delay(2000);
+    writeToLCD("Admin Ready", " ");
+    
+    while(nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
+        // wait for card to be removed
+    }
+    return 0;
+}
 
 
 
@@ -1690,12 +1813,14 @@ void adminGetUserInfo(String memberNumber) {
 
     case guiFORMATINFO: {
 
-        const size_t capacity = JSON_OBJECT_SIZE(3);
+        const size_t capacity = JSON_OBJECT_SIZE(8);
         DynamicJsonDocument doc(capacity);
 
         doc["ErrorCode"] = 0;
+        doc["ErrorMessage"] = "OK";
         doc["Name"] = g_clientInfo.name.c_str();
         doc["ClientID"] = g_clientInfo.clientID;
+        doc["AcctStatus"] = g_clientInfo.contractStatus.c_str();
 
         char JSON[1000];
         serializeJson(doc,JSON );
@@ -1708,17 +1833,20 @@ void adminGetUserInfo(String memberNumber) {
 
         g_adminCommandData = "";
         g_adminCommand = acIDLE; // we got a response
+        break;
     }
 
-        break;
-
     default:
+        writeToLCD("Admin err", "unknown state");
         break;
     }
 
 }
 
-
+// --------------- loopAdmin -------------
+// This is called over and over from the main loop if the 
+// device is configured to be an admin device.
+//
 void loopAdmin() {
 
     static bool init = true;
@@ -1852,6 +1980,7 @@ void setup() {
     // Used by Admin Device
     Particle.function("queryMember",queryMember);
     Particle.variable("queryMemberResult",g_queryMemberResult);
+    Particle.function("burnCard",burnCard);
 
     //Show all lights
     writeToLCD("Init all LEDs","should blink");
@@ -1878,7 +2007,6 @@ void setup() {
 
 
 }
-
 
 // This routine gets called repeatedly, like once every 5-15 milliseconds.
 // Spark firmware interleaves background CPU activity associated with WiFi + Cloud activity with your code. 
