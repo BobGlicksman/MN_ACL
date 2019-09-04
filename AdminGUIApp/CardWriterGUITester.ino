@@ -7,7 +7,7 @@
  * administration.
  * 
  * (c) 2019, Team Practical Projects, Bob Glicksman, Jim Schrempp
- * version 1.1; by: Bob Glicksman; 9/03/19
+ * version 1.2; by: Bob Glicksman; 9/03/19
  * *****************************************************************************************/
 
 // Global variables
@@ -95,9 +95,10 @@ int queryMember(String memberNumber)
 ************************************************************/
 int queryMember(String memberNumber) {
     // define some member data
-    String memberBob = "{ErrorCode:0, ErrorMessage:OK, Name:Bob Glicksman, ClientID:12345678, Status:deadbeat}";
-    String memberJim = "{ErrorCode:0, ErrorMessage:OK, Name:Jim Schrempp, ClientID:98765432, Status:active}";
-    String somethingWrong = "{ErrorCode:1, ErrorMessage:member not found, Name:not found, ClientID:0, Status:none}";
+    String memberBob = "{\"ErrorCode\":0, \"ErrorMessage\":\"OK\", \"Name\":\"Bob Glicksman\", \"ClientID\":12345678, \"Status\":\"deadbeat\"}";
+    String memberJim = "{\"ErrorCode\":0, \"ErrorMessage\":\"OK\", \"Name\":\"Jim Schrempp\", \"ClientID\":98765432, \"Status\":\"active\"}";
+    String somethingWrong = "{\"ErrorCode\":1, \"ErrorMessage\":\"member not found\", \"Name\":\"not found\", \"ClientID\":0, \"Status\":\"none\"}";
+    
     static int state = 0;
     static int resultCode = 2;  // initialize for good data
     static bool lastData = false;   // toggle betweent wo good results
@@ -255,9 +256,10 @@ int identifyCard(String dummy)
 **********************************************************************/
 int identifyCard(String dummy) {
     // define some member data
-    String cardBob = "{ErrorCode:0, ErrorMessage:OK, Name:Bob Glicksman, Member Number:1234, Card Status:current}";
-    String cardJim = "{ErrorCode:0, ErrorMessage:OK, Name:Jim Schrempp, Member Number:8765, Card Status:revoked}";
-    String somethingWrong = "{ErrorCode:3, ErrorMessage:member not found, Name:not found, Member Number:0, Card Status:bad card}";
+    String cardBob = "{\"ErrorCode\":0, \"ErrorMessage\":\"OK\", \"Name\":\"Bob Glicksman\", \"Member Number\":1234, \"Card Status\":\"current\"}";
+    String cardJim = "{\"ErrorCode\":0, \"ErrorMessage\":\"OK\", \"Name\":\"Jim Schrempp\", \"Member Number\":8765, \"Card Status\":\"revoked\"}";
+    String somethingWrong = "{\"ErrorCode\":3, \"ErrorMessage\":\"member not found\", \"Name\":\"not found\", \"Member Number\":0, \"Card Status\":\"bad card\"}";
+    
     static int state = 0;
     static int resultCode = 2;  // initialize for good data
     static bool lastData = false;   // toggle betweent wo good results
