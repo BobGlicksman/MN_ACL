@@ -7,11 +7,11 @@
  * administration.
  * 
  * (c) 2019, Team Practical Projects, Bob Glicksman, Jim Schrempp
- * version 1.2; by: Bob Glicksman; 9/03/19
+ * version 1.3; by: Bob Glicksman; 9/06/19
  * *****************************************************************************************/
 
 // Global variables
-String deviceInfo = "Firmware version 1.1. Last reset @ ";
+String deviceInfo = "Firmware version 1.3. Last reset @ ";
 String memberData = "";
 String cardInfo = "";
 
@@ -101,7 +101,7 @@ int queryMember(String memberNumber) {
     
     static int state = 0;
     static int resultCode = 2;  // initialize for good data
-    static bool lastData = false;   // toggle betweent wo good results
+    static int lastData = 0;   // toggle between results
 
     Particle.publish("received member number = ", memberNumber, PRIVATE);
     
@@ -119,13 +119,17 @@ int queryMember(String memberNumber) {
             
             switch(resultCode)  {   // send back different results for testing
                 case 2: // good data from query
-                    if(lastData == false) {
+                    if(lastData == 0) {
                         memberData = memberBob;
-                        lastData = true;
+                        lastData = 1;
                     }
-                    else {
+                    else if(lastData == 1) {
                         memberData = memberJim;
-                        lastData = false;                   
+                        lastData = 2;                   
+                    } 
+                    else {
+                        memberData = somethingWrong;
+                        lastData = 0; 
                     }
                     
                     resultCode = 3; // Sset the next result type
