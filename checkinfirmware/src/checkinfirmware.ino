@@ -112,12 +112,17 @@
  *      LCD messages when errors occur
  *      More beeps in places with errors
  *      Member name now displayed on successful checkin         
- * version 1.05: 9/1/2019
+ * version 1.05: 8/31/2019
  *      Cloud function SetDeviceType must be called to set up machine. Values are in eDeviceConfigType
  *          Device Type is shown on LCD at end of setup.
  *      Established structure in loop() to handle different device configurations
  *      Added code to get RFID keys from Particle cloud, but the device is not receiving the cloud 
  *          response for some reason. Seach this code for "xxx responseRFIDKeys" to see the work around.
+ * version 1.06 9/1/2019
+ *      Moved some common code into loop()
+ *      Admin loop working
+ *      queryMember cloud function works. 
+ *      burnCard function works but does not update EZF with client unique code yet
  *      
  * 
 ************************************************************************/
@@ -207,7 +212,8 @@ String g_tokenResponseBuffer = "";
 String g_cibmnResponseBuffer = "";
 String g_cibcidResponseBuffer = "";
 String g_packagesResponseBuffer = "";
-
+String g_queryMemberResult = ""; // JSON formatted name:value pairs.  ClientName, ClientID. Admin app will display all values.
+                                 // Will also contain errorCode which app should check to be 0. See function queryMember.
 String JSONParseError = "";
 String g_recentErrors = "";
 String debug2 = "";
@@ -218,9 +224,9 @@ int debug5 = 0;
 String g_packages = ""; // Not implemented yet
 
 typedef enum eDeviceConfigType {
-    UNDEFINED = 0,
-    CHECK_IN = 1,
-    ADMIN_DEV = 2,
+    UNDEFINED_DEVICE = 0,
+    CHECK_IN_DEVICE = 1,
+    ADMIN_DEVICE = 2,
     BOSSLASER = 3,
     WOODSHOP = 4
 } eDeviceConfigType;
@@ -229,7 +235,7 @@ typedef enum eDeviceConfigType {
 // the order or size of any existing fields.
 struct EEPROMdata {
     int MN_Identifier = 11111111;  // set to MN_EPROM_ID when we write to EEPROM
-    eDeviceConfigType deviceType = UNDEFINED;  // Hold the value that drives the behavior of 
+    eDeviceConfigType deviceType = UNDEFINED_DEVICE;  // Hold the value that drives the behavior of 
                          // this device. Set via Cloud Function. 
 } EEPROMdata;
 
@@ -263,6 +269,12 @@ typedef enum eRetStatus {
 } eRetStatus;
 
 
+enum eAdminCommand {
+    acIDLE,
+    acGETUSERINFO
+};
+eAdminCommand g_adminCommand = acIDLE;
+String g_adminCommandData = "";
 
 
 // ------------------   Forward declarations, when needed
@@ -318,7 +330,7 @@ void EEPROMRead() {
     int addr = 0;
     EEPROM.get(addr,EEPROMdata);
     if (EEPROMdata.MN_Identifier != MN_EPROM_ID) {
-        EEPROMdata.deviceType = UNDEFINED;
+        EEPROMdata.deviceType = UNDEFINED_DEVICE;
     }
 }
 
@@ -327,13 +339,13 @@ void EEPROMRead() {
 String deviceTypeToString(eDeviceConfigType deviceType){
     String msg = "";
     switch (deviceType) {
-    case UNDEFINED:
-        msg = "Undefined";
+    case UNDEFINED_DEVICE:
+        msg = "UNDEFINED_DEVICE";
         break;
-    case CHECK_IN:
+    case CHECK_IN_DEVICE:
         msg = "Check In";
         break;
-    case ADMIN_DEV:
+    case ADMIN_DEVICE:
         msg = "Admin";
         break;
     case BOSSLASER:
@@ -564,8 +576,6 @@ void responseRFIDKeys(const char *event, const char *data) {
     const int capacity = JSON_ARRAY_SIZE(6) + JSON_OBJECT_SIZE(1) + 10;
     StaticJsonDocument<400> docJSON;
 
-    
-    debugEvent("got rfid json"); //xxx :" + String(data)");
     // will it parse?
     DeserializationError err = deserializeJson(docJSON, data ); // XXX
     JSONParseError =  err.c_str();
@@ -579,7 +589,7 @@ void responseRFIDKeys(const char *event, const char *data) {
             g_secretKeysValid = true;
         }
             
-        writeToLCD("key parsed", " ");
+        debugEvent("key parsed");
         buzzerGoodBeep();
        
     } else {
@@ -630,7 +640,6 @@ int clientInfoFromJSON (String data) {
             buzzerBadBeep();
             
         } else {
-         
             JsonObject root_0 = docJSON[0];
             g_clientInfo.clientID = root_0["ClientID"].as<int>();
             
@@ -696,7 +705,8 @@ int ezfClientByMemberNumber (String data) {
 void ezfReceiveClientByMemberNumber (const char *event, const char *data)  {
     
     g_cibmnResponseBuffer = g_cibmnResponseBuffer + String(data);
-    debugEvent("clientInfoPart " + String(data));
+
+    debugEvent("clientInfoPart "); // + String(data));
     
     clientInfoFromJSON(g_cibmnResponseBuffer); // try to parse it
 
@@ -729,7 +739,6 @@ int ezfClientByClientIDCloud (String data) {
 
 
 int ezfClientByClientID (int clientID) {
-    
     
     g_cibcidResponseBuffer = "";  // reset last answer
 
@@ -1308,14 +1317,6 @@ uint8_t testCard() {
 //
 
 eRetStatus readTheCard() {
-    
-  /*
-    if (g_cardData.clientID != 0) {
-        return COMPLETE_OK;
-    } else {
-        return IDLE;
-    }
-*/
 
     eRetStatus returnStatus = IN_PROCESS;
 
@@ -1356,18 +1357,23 @@ eRetStatus readTheCard() {
 
     Serial.print("\n\nCard is type ");
     if(cardType == 0) {
-         Serial.println("factory fresh\n");
+        Serial.println("factory fresh\n");
+        writeToLCD("Card is not MN","(fresh format)");
+        buzzerBadBeep();
+        delay(1000);
     } else if (cardType == 1) {
-         Serial.println("Maker Nexus formatted\n");        
+        Serial.println("Maker Nexus formatted\n");        
     } else {
         Serial.println("other card format\n");
+        writeToLCD("Card is not MN","(unknown card)");
+        buzzerBadBeep();
+        delay(1000);
     }
 
     if(cardType == 0) { // factory fresh card
 
-        // do nothing factory fresh code
-        writeToLCD("Card is not MN"," ");
-        buzzerBadBeep();
+        // do nothing factory fresh card
+  
         returnStatus = COMPLETE_FAIL;
 
     } else  {  // MN formatted card
@@ -1428,64 +1434,214 @@ eRetStatus readTheCard() {
     return returnStatus;
     
 }
+
+// ------------ Functions for the Admin app 
+//
+//  These functions are called by the Admin Android app
+//
+
+// queryMember - cloud function
+//    memberNumber string to be lookup up in the CRM
+//    results will be in cloud variable g_queryMemberResult
+// returns:
+//  0 = query accepted
+//	1 = query is underway
+//	2 = query is done and results are in the cloud variable (including any error report)
+//	3 = query was already underway, this query is rejected
+//	4 = memberNumber was not a number or was 0
+//	5 = other error, see LCD panel on device
+
+int queryMember(String data ) {
+
+    int queryMemberNum = data.toInt();
+    if (queryMemberNum == 0){
+        // error, data is not a number or it really is 0
+        return 4;
+    }
+
+    switch (g_adminCommand) {
+    case acIDLE:
+
+        if ((g_clientInfo.isValid) && (g_clientInfo.memberNumber.startsWith(data))) {
+            // we have a result for this query data 
+            return 2;
+        }
+
+        // at this point we have a member number in data and we are acIDLE
+        // clear the result and issue the command, the admin loop
+        // will see this and take action 
+        if (g_adminCommand == acIDLE) {
+            g_queryMemberResult = "";
+            g_adminCommandData = data;
+            g_adminCommand = acGETUSERINFO;
+            return 0;
+        }
+        break;
+    
+    default:
+        // not acIDLE
+        if (g_adminCommandData.startsWith(data)) {
+            // asking for status on the query in progress
+            return 1;
+        } else {
+            // must be trying to start a new query, and we are busy
+            return 3;
+
+        }
+        break;
+    }
+
+    return 5; // should never get here.
+};
+
+// ----------------------- burnCard ------------------------
+// burnCard - cloud function
+//     data is the string representation of the clientID for this card
+//         it must match the value in g_clientInfo
+// returns:
+//  	0 = card burned successfully
+//	    1 = error contacting the hardwarebad card; burn unsuccessful
+//	    2 = clientID does not match clientID from last queryMember call
+//      3 = data is not a number or is 0
+
+int burnCard(String data){
+
+    int clientID = data.toInt();
+    if (clientID == 0) {
+        // bad client ID 
+        return 3;
+    }
+
+    if (g_clientInfo.clientID != clientID) {
+        // this is not the clientID data we have
+        return 2;
+    }
+
+    // burn baby burn!
+    // All this needs to happen in 10 seconds or the cloud function will time out
+    
+    
+    // Wait for an ISO14443A type cards (Mifare, etc.).  When one is found
+    // 'uid' will be populated with the UID, and uidLength will indicate
+    Serial.println("waiting for ISO14443A card to be presented to the reader ...");
+    
+    writeToLCD("Place card on","reader to burn");
+    
+    while(!nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
+        // JUST WAIT FOR A CARD
+        // xxx need a timeout here
+    }
+    
+    // test the card to determine its type
+    uint8_t cardType = testCard();
+    debugEvent("card is type " + cardType);
+    Serial.print("\n\nCard is type ");
+    if(cardType == 0) {
+         Serial.println("factory fresh\n");
+        // change the keys to make this an MN card
+        bool cardIsReady = changeKeys(0, DEFAULT_KEY_A, g_secretKeyA, g_secretKeyB, MN_SECURE_ACB);
+        if (cardIsReady) {
+            Serial.println("\nMade fresh card to MN card OK\n");
+        } else {
+            return 1;
+        }
+    } else if (cardType == 1) {
+        Serial.println("Maker Nexus formatted\n");        
+    } else {
+        Serial.println("other\n");
+        writeToLCD("Unable to","use this card");
+        buzzerBadBeep();
+        return 1; // not factory fresh and we can't read it
+    }
+
+    // we now have an MN card 
+    writeToLCD("Going to","burn card"); //xxx
+    //delay(2000);
+            
+    // now write data to block 0 and 1 of the MN sector using secret key B
+    uint8_t clientIDChar[16];
+    for (int i=0; i<16; i++){
+        clientIDChar[i] = data.c_str()[i];
+    }
+
+    writeBlockData(clientIDChar, 0,  1, g_secretKeyB );
+    writeBlockData(TEST_PAT_2, 1,  1, g_secretKeyB);
+    /*
+    uint8_t dataBlock[] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15}; //  16 byte buffer to hold a block of data
+    // now read the data back using MN secret key A
+    readBlockData(dataBlock, 0,  0, g_secretKeyA);
+    Serial.println("The new block 0 data is:");
+    nfc.PrintHex(dataBlock, 16);
+    Serial.println("");
+    
+    readBlockData(dataBlock, 1,  0, g_secretKeyA);
+    Serial.println("The new block 1 data is:");
+    nfc.PrintHex(dataBlock, 16); 
+    
+    Serial.println("");
+    */
+    Serial.println("Remove card from reader ...");
+    writeToLCD("Card Done"," ");
+    buzzerGoodBeeps2();
+    delay(2000);
+    writeToLCD("Admin Ready", " ");
+    
+    while(nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
+        // wait for card to be removed
+    }
+    return 0;
+}
+
+
+
+
+
 // ---------------------- LOOP FOR CHECKIN ---------------------
 // ----------------------                  ----------------------
 // This function is called from main loop when configured for Check In station. 
 void loopCheckIn() {    
-    enum mlState {mlsREQUESTRFIDKEYS, mlsWAITFORKEYS, mlsIDLE, mlsCARDPRESENT, mlsCARDOK, mlsREQUESTTOKEN, mlsWAITFORTOKEN, mlsASKFORCLIENTINFO, mlsWAITFORCLIENTINFO, mlsCHECKINGIN, mlsERROR};
+    //CheckInLoopStates
+    enum cilState {
+        cilINIT,
+        cilWAITFORCARD, 
+        cilREQUESTTOKEN,
+        cilWAITFORTOKEN, 
+        cilASKFORCLIENTINFO, 
+        cilWAITFORCLIENTINFO, 
+        cilCHECKINGIN, 
+        cilERROR
+    };
     
-    static mlState mainloopState = mlsREQUESTRFIDKEYS;
+    static cilState cilloopState = cilINIT;
     static unsigned long processStartMilliseconds = 0; 
     
-    switch (mainloopState) {
-    case mlsREQUESTRFIDKEYS:
-        writeToLCD("Requesting Keys", " ");
-        g_secretKeysValid = false;
-        Particle.publish("RFIDKeys", "junk1", PRIVATE);
-        processStartMilliseconds = millis();
-        mainloopState = mlsWAITFORKEYS;
-
-// xxx responseRFIDKeys debugging since we are not getting called back from the webhook for some reason...
-        responseRFIDKeys("junk", "{\"WriteKey\":[160,161,162,163,164,165],\"ReadKey\":[176,177,178,179,180,181] }");
-
+    switch (cilloopState) {
+    case cilINIT:
+        writeToLCD("Checkin Ready"," ");
+        cilloopState = cilWAITFORCARD;
         break;
-    case mlsWAITFORKEYS:
-        if(g_secretKeysValid) {
-            //we have the keys
-            mainloopState = mlsIDLE; // initialization is over
-        } else {
-            // timer to limit this state
-            if (millis() - processStartMilliseconds > 15000) {
-                debugEvent("took too long to get RFID Keys, init fails, all stop.");
-                writeToLCD("Timeout on Keys", "fatal error");
-                buzzerBadBeep();
-                mainloopState = mlsERROR;
-            }
-        //Otherwise we stay in this state
-        }
-        break;
-    case mlsIDLE: {
+    case cilWAITFORCARD: {
         digitalWrite(READY_LED,HIGH);
         eRetStatus retStatus = readTheCard();
         if (retStatus == COMPLETE_OK) {
             // move to the next step
-            mainloopState = mlsREQUESTTOKEN;
+            cilloopState = cilREQUESTTOKEN;
             digitalWrite(READY_LED,LOW);
             }
         break;
     }
-    case mlsREQUESTTOKEN: 
+    case cilREQUESTTOKEN: 
         // request a good token from ezf
         ezfGetCheckInTokenCloud("junk");
         processStartMilliseconds = millis();
-        mainloopState = mlsWAITFORTOKEN;
+        cilloopState = cilWAITFORTOKEN;
         break;
 
-    case mlsWAITFORTOKEN:
+    case cilWAITFORTOKEN:
         // waiting for a good token from ezf
         if (g_authTokenCheckIn.token.length() != 0) {
             // we have a token
-            mainloopState = mlsASKFORCLIENTINFO;
+            cilloopState = cilASKFORCLIENTINFO;
         } else {
             // timer to limit this state
             if (millis() - processStartMilliseconds > 15000) {
@@ -1494,25 +1650,26 @@ void loopCheckIn() {
                 writeToLCD("Timeout token", "Try Again");
                 buzzerBadBeep();
                 delay(2000);
-                mainloopState = mlsIDLE;
+                cilloopState = cilWAITFORCARD;
             }
         //Otherwise we stay in this state
         }
         break;
-    case mlsASKFORCLIENTINFO:  {
+
+    case cilASKFORCLIENTINFO:  {
 
         // ask for client details
         ezfClientByClientID(g_cardData.clientID);
         processStartMilliseconds = millis();
-        mainloopState = mlsWAITFORCLIENTINFO;
+        cilloopState = cilWAITFORCLIENTINFO;
         break;
         
     }
-    case mlsWAITFORCLIENTINFO: {
+    case cilWAITFORCLIENTINFO: {
   
         if ( g_clientInfo.isValid ) {
             // got client data, let's move on
-            mainloopState = mlsCHECKINGIN;
+            cilloopState = cilCHECKINGIN;
         } else {
             // timer to limit this state
             if (millis() - processStartMilliseconds > 15000) {
@@ -1521,12 +1678,12 @@ void loopCheckIn() {
                 writeToLCD("Timeout clientInfo", "Try Again");
                 buzzerBadBeep();
                 delay(2000);
-                mainloopState = mlsIDLE;
+                cilloopState = cilWAITFORCARD;
             }
         } // Otherwise we stay in this state
         break;
     }
-    case mlsCHECKINGIN: {
+    case cilCHECKINGIN: {
 
         // If the client meets all critera, check them in
         bool allowIn = isClientOkToCheckIn();
@@ -1538,7 +1695,7 @@ void loopCheckIn() {
             delay(2000);
             digitalWrite(REJECT_LED,LOW);
 
-            mainloopState = mlsIDLE;
+            cilloopState = cilWAITFORCARD;
             debugEvent("contract status is not good."); 
 
             if (g_clientInfo.contractStatus.length() >= 1) {
@@ -1557,32 +1714,177 @@ void loopCheckIn() {
             buzzerGoodBeeps2();
             delay(1000);
             digitalWrite(ADMIT_LED,LOW);
-            mainloopState = mlsIDLE;
+            cilloopState = cilWAITFORCARD;
         
             }
     }
-    case mlsERROR:
+    case cilERROR:
         break;
     default:
         break;
     } //switch (mainloopState)
     
-    
-    heartbeatLEDs();
 
-    debugEvent("");  // need this to pump the debug event process
 
 }
 
+// adminGetUserInfo
+//
+// Called from admin loop when admin command is acGETUSERINFO
+//
+// calls CRM for the user data and formats it as JSON
+// for the admin client to get via particle cloud.
+// JSON has at least clientID, name but can have more fields.
+// also has errorCode of:
+//	0 = member found and membership data is in the JSON
+//	2 = member not found in EZFacility
+//	3 = more than one member found in EZfacility
+//	4 = other error.
 
+void adminGetUserInfo(String memberNumber) {
+    enum guiState {
+        guiINIT,
+        guiIDLE,
+        guiWAITFORTOKEN,
+        guiASKFORCLIENTINFO,
+        guiWAITFORINFO,
+        guiFORMATINFO
+    }
+    static guiState = guiINIT;
+    static unsigned long processStartMilliseconds = 0; 
+
+    switch (guiState) {
+    case guiINIT:
+        writeToLCD("Admin Ready", " ");
+        guiState = guiIDLE;
+        break;
+
+    case guiIDLE: 
+        writeToLCD(" "," ");
+        // request a good token from ezf
+        ezfGetCheckInTokenCloud("junk");
+        processStartMilliseconds = millis();
+        guiState = guiWAITFORTOKEN;
+        break;
+
+    case guiWAITFORTOKEN:
+        // waiting for a good token from ezf
+        if (g_authTokenCheckIn.token.length() != 0) {
+            // we have a token
+            guiState = guiASKFORCLIENTINFO;
+        } else {
+            // timer to limit this state
+            if (millis() - processStartMilliseconds > 15000) {
+                debugEvent("took too long to get token, user info aborts");
+                processStartMilliseconds = 0;
+                writeToLCD("Timeout token", "Try Again");
+                buzzerBadBeep();
+                delay(2000);
+                guiState = guiIDLE;
+            }
+        //Otherwise we stay in this state
+        }
+        break;
+
+    case guiASKFORCLIENTINFO:
+        processStartMilliseconds = millis();
+        ezfClientByMemberNumber(g_adminCommandData);
+        guiState = guiWAITFORINFO;
+        break;
+
+    case guiWAITFORINFO:
+
+        if ( g_clientInfo.isValid ) {
+            // got client data, let's move on
+            guiState = guiFORMATINFO;
+            
+        } else {
+            // timer to limit this state
+            if (millis() - processStartMilliseconds > 15000) {
+                debugEvent("15 second timer exeeded, get client info error");
+                processStartMilliseconds = 0;
+                writeToLCD("Timeout clientInfo", "Try Again");
+                buzzerBadBeep();
+                delay(2000);
+                guiState = guiIDLE;
+            }
+        } // Otherwise we stay in this state
+        break;
+
+    case guiFORMATINFO: {
+
+        const size_t capacity = JSON_OBJECT_SIZE(8);
+        DynamicJsonDocument doc(capacity);
+
+        doc["ErrorCode"] = 0;
+        doc["ErrorMessage"] = "OK";
+        doc["Name"] = g_clientInfo.name.c_str();
+        doc["ClientID"] = g_clientInfo.clientID;
+        doc["AcctStatus"] = g_clientInfo.contractStatus.c_str();
+
+        char JSON[1000];
+        serializeJson(doc,JSON );
+        g_queryMemberResult = String(JSON);
+        //g_queryMemberResult = "{\"ErrorCode\":0,\"Name\":\"Jim S\",\"ClientID\":12345}";
+
+        writeToLCD("Selected",g_clientInfo.name);
+
+        guiState = guiIDLE;
+
+        g_adminCommandData = "";
+        g_adminCommand = acIDLE; // we got a response
+        break;
+    }
+
+    default:
+        writeToLCD("Admin err", "unknown state");
+        break;
+    }
+
+}
+
+// --------------- loopAdmin -------------
+// This is called over and over from the main loop if the 
+// device is configured to be an admin device.
+//
+void loopAdmin() {
+
+    static bool init = true;
+
+    if (init) {
+        init = false;
+        writeToLCD("Admin Ready", " ");
+    }
+
+    switch (g_adminCommand) {
+    case acIDLE:
+        break;
+
+    case acGETUSERINFO:
+        adminGetUserInfo(g_adminCommandData); 
+        break;
+
+    default:
+        break;
+    }
+   
+
+
+}
 
 
 // --------------------- SETUP -------------------
 // This routine runs only once upon reset
 void setup() {
 
-  // Initialize D0 + D7 pin as output
-  // It's important you do this here, inside the setup() function rather than outside it or in the loop function.
+    System.on(firmware_update, firmwareupdatehandler);
+
+    // read EEPROM data for device type 
+    EEPROMRead();
+
+    // Initialize D0 + D7 pin as output
+    // It's important you do this here, inside the setup() function rather than outside it 
+    // or in the loop function.
     pinMode(led, OUTPUT);
     pinMode(led2, OUTPUT);
     
@@ -1602,6 +1904,7 @@ void setup() {
     lcd.begin(16,2);
 #endif
     writeToLCD("MN Checkin","StartUp");
+
 #ifdef TEST
     delay(5000);    // delay to get putty up
     Serial.println("trying to connect ....");
@@ -1613,7 +1916,6 @@ void setup() {
     // ------ RFID SetUp
     pinMode(IRQ_PIN, INPUT);     // IRQ pin from PN532
     //pinMode(RST_PIN, OUTPUT);    // reserved for PN532 RST -- not used at this time
-
     
     nfc.begin(); 
  
@@ -1638,46 +1940,47 @@ void setup() {
     nfc.SAMConfig();
     
 #endif
-
-    // ------- CheckIn Setup
-
+    
     writeToLCD("Initializing","Particle Cloud");
 
     Particle.variable ("ClientID", g_clientInfo.clientID);
-    Particle.variable ("RFIDCardKey", g_clientInfo.RFIDCardKey);
     Particle.variable ("ContractStatus",g_clientInfo.contractStatus);
-    Particle.variable ("g_Packages",g_packages);
     Particle.variable ("recentErrors",g_recentErrors);
-    
     Particle.variable ("JSONParseError", JSONParseError);
       
-    Particle.variable ("debug2", debug2);
-    Particle.variable ("debug3", debug3);
-    Particle.variable ("debug4", debug4);
- 
-    int success = Particle.function("RFIDCardRead", RFIDCardReadCloud);
-    if (success) {}; // xxx
+    int success = 0; 
+    if (success) {}; // xxx to remove warning, but should we check this below?
 
+    // The following are useful for debugging
+    //Particle.variable ("RFIDCardKey", g_clientInfo.RFIDCardKey);
+    //Particle.variable ("g_Packages",g_packages);
+    //success = Particle.function("GetCheckInToken", ezfGetCheckInTokenCloud);
+    //Particle.variable ("debug2", debug2);
+    //Particle.variable ("debug3", debug3);
+    //Particle.variable ("debug4", debug4);
+    success = Particle.function("ClientByMemberNumber", ezfClientByMemberNumber);
+    success = Particle.function("ClientByClientID", ezfClientByClientIDCloud);
+ 
+    // Used by all device types
     success = Particle.function("SetDeviceType", cloudSetDeviceType);
 
-    success = Particle.function("GetCheckInToken", ezfGetCheckInTokenCloud);
+    // Used to test CheckIn
+    success = Particle.function("RFIDCardRead", RFIDCardReadCloud);
+
+    // Needed for Checkin
     Particle.subscribe(System.deviceID() + "ezfCheckInToken", ezfReceiveCheckInToken, MY_DEVICES);
-  
-    success = Particle.function("ClientByMemberNumber", ezfClientByMemberNumber);
     Particle.subscribe(System.deviceID() + "ezfClientByMemberNumber", ezfReceiveClientByMemberNumber, MY_DEVICES);
-      
-    success = Particle.function("ClientByClientID", ezfClientByClientIDCloud);
     Particle.subscribe(System.deviceID() + "ezfClientByClientID", ezfReceiveClientByClientID, MY_DEVICES);
-    
-    success = Particle.function("PackagesByClientID",ezfGetPackagesByClientID);
-    Particle.subscribe(System.deviceID() + "ezfGetPackagesByClientID",ezfReceivePackagesByClientID, MY_DEVICES);
-
     Particle.subscribe(System.deviceID() + "RFIDKeys", responseRFIDKeys, MY_DEVICES);
- 
-    // read EEPROM data for device type 
-    EEPROMRead();
 
-    System.on(firmware_update, firmwareupdatehandler);
+    // Used by device types for machine usage permission validation
+    //success = Particle.function("PackagesByClientID",ezfGetPackagesByClientID);
+    //Particle.subscribe(System.deviceID() + "ezfGetPackagesByClientID",ezfReceivePackagesByClientID, MY_DEVICES);
+
+    // Used by Admin Device
+    Particle.function("queryMember",queryMember);
+    Particle.variable("queryMemberResult",g_queryMemberResult);
+    Particle.function("burnCard",burnCard);
 
     //Show all lights
     writeToLCD("Init all LEDs","should blink");
@@ -1705,20 +2008,84 @@ void setup() {
 
 }
 
-
 // This routine gets called repeatedly, like once every 5-15 milliseconds.
 // Spark firmware interleaves background CPU activity associated with WiFi + Cloud activity with your code. 
 // Make sure none of your code delays or blocks for too long (like more than 5 seconds), or weird things can happen.
 void loop() {
-    switch (EEPROMdata.deviceType) {
-    case UNDEFINED:
-        break;
-    case CHECK_IN:
-        loopCheckIn();
-        break;
-    default:
-        break;
-    }   
 
+    // Main Loop State
+    enum mlsState {
+        mlsREQUESTRFIDKEYS, 
+        mlsWAITFORKEYS, 
+        mlsDEVICELOOP, 
+        mlsERROR
+    };
+    
+    static mlsState mainloopState = mlsREQUESTRFIDKEYS;
+    static unsigned long processStartMilliseconds = 0; 
+    
+    switch (mainloopState) {
+
+    case mlsREQUESTRFIDKEYS:
+
+        writeToLCD("Requesting Keys", " ");
+        g_secretKeysValid = false;
+        Particle.publish("RFIDKeys", "junk1", PRIVATE);
+        processStartMilliseconds = millis();
+        mainloopState = mlsWAITFORKEYS;
+
+// xxx responseRFIDKeys debugging since we are not getting called back from the webhook for some reason...
+        responseRFIDKeys("junk", "{\"WriteKey\":[160,161,162,163,164,165],\"ReadKey\":[176,177,178,179,180,181] }");
+
+        break;
+
+    case mlsWAITFORKEYS:
+
+        if(g_secretKeysValid) {
+            //we have the keys
+            writeToLCD(" "," ");
+            mainloopState = mlsDEVICELOOP; // initialization is over
+        } else {
+            // timer to limit this state
+            if (millis() - processStartMilliseconds > 15000) {
+                debugEvent("took too long to get RFID Keys, init fails, all stop.");
+                writeToLCD("Timeout on Keys", "fatal error");
+                buzzerBadBeep();
+                mainloopState = mlsERROR;
+            }
+        //Otherwise we stay in this state
+        }
+        break;
+
+    case mlsDEVICELOOP: {
+
+        // Once the intial steps have occurred, the main loop will stay
+        // in this state forever. It calls out to the correct device code and
+        // the "loop" continues there
+        switch (EEPROMdata.deviceType) {
+        case UNDEFINED_DEVICE:
+            break;
+        case CHECK_IN_DEVICE:
+            loopCheckIn();
+            break;
+        case ADMIN_DEVICE:
+            loopAdmin();
+            break;
+        default:
+            break;
+        }
+        break;
+    }
+    case mlsERROR: 
+        break;
+
+    default:
+        writeToLCD("Unknown","mainLoopState");
+        break;
+    }
+    
+    heartbeatLEDs();
+
+    debugEvent("");  // need this to pump the debug event process
 }
 
