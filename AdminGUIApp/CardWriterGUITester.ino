@@ -7,11 +7,11 @@
  * administration.
  * 
  * (c) 2019, Team Practical Projects, Bob Glicksman, Jim Schrempp
- * version 1.3; by: Bob Glicksman; 9/06/19
+ * version 1.4; by: Bob Glicksman; 9/07/19
  * *****************************************************************************************/
 
 // Global variables
-String deviceInfo = "Firmware version 1.3. Last reset @ ";
+String deviceInfo = "Firmware version 1.4. Last reset @ ";
 String memberData = "";
 String cardInfo = "";
 
@@ -61,7 +61,7 @@ int queryMember(String memberNumber)
 
     The return value is an int with the following encoding:
 
-    0 = query accepted
+    	0 = query accepted
 	1 = query is underway
 	2 = query is done and results are in the cloud variable (including any error report)
 	3 = query was already underway, this query is rejected
@@ -178,7 +178,7 @@ int burnCard(String clientID)
     The return value is an int with the following encoding:
 
 	0 = function called successfully; follow instructions on the LCD
-    1 = failed to contact card reader/write
+    	1 = failed to contact card reader/write
 
 ************************************************************/
 int burnCard(String clientID) {
@@ -205,7 +205,7 @@ int resetCard(String dummy)
     
     The return value is an int with the following encoding:
 
-    0 = function called; follow instructions on the LCD panel
+    	0 = function called; follow instructions on the LCD panel
 	1 = failure to contact the card reader/writer hardware
 
 ************************************************************/
@@ -234,11 +234,11 @@ int identifyCard(String dummy)
 
     The return value is an int with the following encoding:
 
-    0 = card is MN formatted; query for member data initiated
+    	0 = card is MN formatted; query for member data initiated
 	1 = query is underway (return in one second)
 	2 = query complete; card owner data is in the string memberInformation
 	3 = card is factory fresh (blank)
-    4 = card not identified; card format unknown.
+    	4 = card not identified; card format unknown.
 
 
     Successful query will load the JSON representation of member data from 
@@ -251,10 +251,10 @@ int identifyCard(String dummy)
         An example of name:value pairs is:
 
         ErrorCode: 0
-	    ErrorMessage: OK
+	ErrorMessage: OK
         Name : Bob Glicksman
         Member Number :  7654
-	    Card Status :  Current (alternative: Revoked)
+	Card Status :  Current (alternative: Revoked)
 
 
 **********************************************************************/
@@ -266,7 +266,7 @@ int identifyCard(String dummy) {
     
     static int state = 0;
     static int resultCode = 2;  // initialize for good data
-    static bool lastData = false;   // toggle betweent wo good results
+    static int lastData = 0;   // toggle between results
 
     Particle.publish("identifyCard ", "called", PRIVATE);
     
@@ -284,13 +284,17 @@ int identifyCard(String dummy) {
             
             switch(resultCode)  {   // send back different results for testing
                 case 2: // query complete; card owner data is in the string memberInformation
-                    if(lastData == false) {
+                    if(lastData == 0) {
                         cardInfo = cardBob;
-                        lastData = true;
+                        lastData = 1;
+                    }
+                    else if(lastData == 1) {
+                        cardInfo = cardJim;
+                        lastData = 2;                   
                     }
                     else {
-                        cardInfo = cardJim;
-                        lastData = false;                   
+                        cardInfo = somethingWrong;
+                        lastData = 0;
                     }
                     
                     resultCode = 3; // Sset the next result type
