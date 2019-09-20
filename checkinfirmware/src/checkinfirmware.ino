@@ -129,8 +129,11 @@
  *      Moved get of RFID tokens out of main loop and into setup(). If we don't get the keys that is a full stop failure.
  *      Added the card ID code to Admin device
  *      1.071 bug fix to the timeout code after displaying a query name
+ *      1.072 prefixed cloud functions with "cloud"
+ *            moved clientInfo serialization to a common routine
+ *            added AmountDue to clientInfo
 ************************************************************************/
-#define MN_FIRMWARE_VERSION 1.071
+#define MN_FIRMWARE_VERSION 1.072
 
 
 //#define TEST     // uncomment for debugging mode
@@ -263,6 +266,7 @@ struct  struct_clientInfo {  // holds info on the current client
     String RFIDCardKey = "";    // string stored in EZFacility "custom fields". We may want to change this name
     String memberNumber = "";   // string stored in EZFacility. May not be unique
     String contractStatus = ""; // string returned from EZF. Values we know of: Active, Frozen, Cancelled, Suspended
+    int amountDue = 0;          // from EZF
 } g_clientInfo;
 
 
@@ -619,8 +623,31 @@ void clearClientInfo() {
     g_clientInfo.RFIDCardKey = "";
     g_clientInfo.contractStatus = "";
     g_clientInfo.memberNumber = "";
+    g_clientInfo.amountDue = 0;
     
 }
+
+
+// format g_clientInfo into JSON 
+String clientInfoToJSON(int errCode, String errMsg){
+
+        const size_t capacity = JSON_OBJECT_SIZE(10);
+        DynamicJsonDocument doc(capacity);
+
+        doc["ErrorCode"] = errCode;
+        doc["ErrorMessage"] = errMsg.c_str();
+        doc["Name"] = g_clientInfo.name.c_str();
+        doc["ClientID"] = g_clientInfo.clientID;
+        doc["Status"] = g_clientInfo.contractStatus.c_str();
+        doc["AmountDue"] = g_clientInfo.amountDue;
+
+        char JSON[1000];
+        serializeJson(doc,JSON );
+        String rtnValue = String(JSON);
+        return rtnValue;
+
+}
+
 
 // Parse the client JSON from EZF to load g_clientInfo
 // Member Number is now supposed to be unique
@@ -642,13 +669,19 @@ int clientInfoFromJSON (String data) {
          JsonObject root_1 = docJSON[1];
         if (root_1["ClientID"].as<int>() != 0)  {  // is this the correct test?
             
+            // should not be possible in EZFacility
             // member id is not unique
             g_recentErrors = "More than one client info in JSON ... " + g_recentErrors;
             writeToLCD("Err. Member Num", "not unique");
             buzzerBadBeep();
             
         } else {
+            // xxx this should really be in a common routine with (search deserialize client)
+
+            clearClientInfo();
+
             JsonObject root_0 = docJSON[0];
+
             g_clientInfo.clientID = root_0["ClientID"].as<int>();
             
             g_clientInfo.contractStatus = root_0["MembershipContractStatus"].as<char*>();
@@ -662,9 +695,11 @@ int clientInfoFromJSON (String data) {
             g_clientInfo.name = String(root_0["FirstName"].as<char*>()) + " " + String(root_0["LastName"].as<char*>());
 
             g_clientInfo.memberNumber = String(root_0["MembershipNumber"].as<char*>());
+
+            g_clientInfo.amountDue = root_0["AmountDue"]; 
             
             g_clientInfo.isValid = true;
-            
+
         }
         
         return 0;
@@ -768,6 +803,7 @@ int ezfClientByClientID (int clientID) {
 }
 
 
+
 void ezfReceiveClientByClientID (const char *event, const char *data)  {
     
     g_cibcidResponseBuffer = g_cibcidResponseBuffer + String(data);
@@ -783,6 +819,9 @@ void ezfReceiveClientByClientID (const char *event, const char *data)  {
     DeserializationError err = deserializeJson(docJSON, temp );
     JSONParseError =  err.c_str();
     if (!err) {
+        
+        // xxx this should really be in a common routine with (search deserialize client)
+        clearClientInfo();
 
         g_clientInfo.clientID = docJSON["ClientID"].as<int>();
             
@@ -798,8 +837,10 @@ void ezfReceiveClientByClientID (const char *event, const char *data)  {
 
         g_clientInfo.memberNumber = String(docJSON["MembershipNumber"].as<char*>());  
 
+        g_clientInfo.amountDue  = docJSON["AmountDue"]; 
+
         g_clientInfo.isValid = true;
-        
+
     }
 }
 
@@ -872,7 +913,7 @@ int ezfCheckInClient(String clientID) {
 // Called to simulate a card read. 
 // Pass in: clientID,cardUID
 
-int RFIDCardReadCloud (String data) {
+int cloudRFIDCardRead (String data) {
     
     int commaLocation = data.indexOf(",");
     if (commaLocation == -1) {
@@ -1417,6 +1458,7 @@ eRetStatus readTheCard() {
         
         // display the status to the user
         String msg = "";
+        String msg2 = "";
         if (g_cardData.clientID == 0 ) {
             returnStatus = COMPLETE_FAIL;
             msg = "Card read failed";
@@ -1424,11 +1466,13 @@ eRetStatus readTheCard() {
         } else {
             returnStatus = COMPLETE_OK;
             msg = "CID:" + String(g_cardData.clientID);
+            msg2 = "UID:" + String(g_cardData.UID);
             buzzerGoodBeep();
         }
-        writeToLCD(msg, "");
+        writeToLCD(msg, msg2);
         Serial.println(msg);
         Serial.println("");  
+        delay(1000);
 
     }
     
@@ -1448,7 +1492,7 @@ eRetStatus readTheCard() {
 //  These functions are called by the Admin Android app
 //
 
-// queryMember - cloud function
+// cloudQueryMember - cloud function
 //    memberNumber string to be lookup up in the CRM
 //    results will be in cloud variable g_queryMemberResult
 // returns:
@@ -1459,7 +1503,7 @@ eRetStatus readTheCard() {
 //	4 = memberNumber was not a number or was 0
 //	5 = other error, see LCD panel on device
 
-int queryMember(String data ) {
+int cloudQueryMember(String data ) {
 
     int queryMemberNum = data.toInt();
     if (queryMemberNum == 0){
@@ -1501,17 +1545,22 @@ int queryMember(String data ) {
     return 5; // should never get here.
 };
 
-// ----------------------- identifyCard --------------------
+// ----------------------- cloudIdentifyCard --------------------
 //
-int identifyCard (String data) {
+int cloudIdentifyCard (String data) {
     //g_identifyCardResult = "";
     g_adminCommandData = data;
     g_adminCommand = acIDENTIFYCARD; // admin loop will see this and change state
-    return 0;
+
+    if (g_clientInfo.isValid) {
+        return 2;
+    } else {
+        return 0;
+    }
 };
 
-// ----------------------- burnCard ------------------------
-// burnCard - cloud function
+// ----------------------- cloudBurnCard ------------------------
+// cloudBurnCard - cloud function
 //     data is the string representation of the clientID for this card
 //         it must match the value in g_clientInfo
 // returns:
@@ -1520,7 +1569,7 @@ int identifyCard (String data) {
 //	    2 = clientID does not match clientID from last queryMember call
 //      3 = data is not a number or is 0
 
-int burnCard(String data){
+int cloudBurnCard(String data){
 
     int clientID = data.toInt();
     if (clientID == 0) {
@@ -1599,8 +1648,13 @@ void burnCardNow(int clientID, String cardUID) {
         clientIDChar[i] = String(clientID).c_str()[i];
     }
 
+    uint8_t cardUIDChar[16];
+    for (int i=0; i<16; i++){
+        cardUIDChar[i] = cardUID.c_str()[i];
+    }
+
     writeBlockData(clientIDChar, 0,  1, g_secretKeyB );
-    writeBlockData(TEST_PAT_2, 1,  1, g_secretKeyB);
+    writeBlockData(cardUIDChar, 1,  1, g_secretKeyB);
     /*
     uint8_t dataBlock[] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15}; //  16 byte buffer to hold a block of data
     // now read the data back using MN secret key A
@@ -1859,22 +1913,9 @@ enum idcState {
         } // Otherwise we stay in this state
         break;
 
-
     case idcFORMATINFO: {
 
-        const size_t capacity = JSON_OBJECT_SIZE(8);
-        DynamicJsonDocument doc(capacity);
-
-        doc["ErrorCode"] = 0;
-        doc["ErrorMessage"] = "OK";
-        doc["Name"] = g_clientInfo.name.c_str();
-        doc["ClientID"] = g_clientInfo.clientID;
-        doc["AcctStatus"] = g_clientInfo.contractStatus.c_str();
-
-        char JSON[1000];
-        serializeJson(doc,JSON );
-        g_queryMemberResult = String(JSON);
-        //g_queryMemberResult = "{\"ErrorCode\":0,\"Name\":\"Jim S\",\"ClientID\":12345}";
+        g_queryMemberResult = clientInfoToJSON(0,"OK");
 
         writeToLCD("Card is for",g_clientInfo.name);
         buzzerGoodBeep();
@@ -1996,26 +2037,14 @@ void adminGetUserInfo(int clientID, String memberNumber) {
 
     case guiFORMATINFO: {
 
-        const size_t capacity = JSON_OBJECT_SIZE(8);
-        DynamicJsonDocument doc(capacity);
-
-        doc["ErrorCode"] = 0;
-        doc["ErrorMessage"] = "OK";
-        doc["Name"] = g_clientInfo.name.c_str();
-        doc["ClientID"] = g_clientInfo.clientID;
-        doc["AcctStatus"] = g_clientInfo.contractStatus.c_str();
-
-        char JSON[1000];
-        serializeJson(doc,JSON );
-        g_queryMemberResult = String(JSON);
-        //g_queryMemberResult = "{\"ErrorCode\":0,\"Name\":\"Jim S\",\"ClientID\":12345}";
+        g_queryMemberResult = clientInfoToJSON(0, "OK");
 
         writeToLCD("Selected",g_clientInfo.name);
 
         processStartMilliseconds = millis();
         guiState = guiDISPLAYINGINFO;
 
- // we got a response
+        // we got a response
         break;
     }
 
@@ -2180,7 +2209,7 @@ void setup() {
     success = Particle.function("SetDeviceType", cloudSetDeviceType);
 
     // Used to test CheckIn
-    success = Particle.function("RFIDCardRead", RFIDCardReadCloud);
+    success = Particle.function("RFIDCardRead", cloudRFIDCardRead);
 
     // Needed for Checkin
     Particle.subscribe(System.deviceID() + "ezfCheckInToken", ezfReceiveCheckInToken, MY_DEVICES);
@@ -2193,10 +2222,10 @@ void setup() {
     //Particle.subscribe(System.deviceID() + "ezfGetPackagesByClientID",ezfReceivePackagesByClientID, MY_DEVICES);
 
     // Used by Admin Device
-    Particle.function("queryMember",queryMember);
+    Particle.function("queryMember",cloudQueryMember);
     Particle.variable("queryMemberResult",g_queryMemberResult);
-    Particle.function("burnCard",burnCard);
-    Particle.function("identifyCard",identifyCard);
+    Particle.function("burnCard",cloudBurnCard);
+    Particle.function("identifyCard",cloudIdentifyCard);
 
     //Show all lights
     writeToLCD("Init all LEDs","should blink");
