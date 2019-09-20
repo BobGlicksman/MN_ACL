@@ -128,8 +128,9 @@
  *      Version string now shows on LCD at end of setup()
  *      Moved get of RFID tokens out of main loop and into setup(). If we don't get the keys that is a full stop failure.
  *      Added the card ID code to Admin device
+ *      1.071 bug fix to the timeout code after displaying a query name
 ************************************************************************/
-#define MN_FIRMWARE_VERSION 1.07
+#define MN_FIRMWARE_VERSION 1.071
 
 
 //#define TEST     // uncomment for debugging mode
@@ -277,7 +278,8 @@ typedef enum eRetStatus {
 enum eAdminCommand {
     acIDLE = 1,
     acGETUSERINFO = 2,
-    acIDENTIFYCARD = 3
+    acIDENTIFYCARD = 3,
+    acBURNCARDNOW = 4
 };
 eAdminCommand g_adminCommand = acIDLE;
 String g_adminCommandData = "";
@@ -1465,14 +1467,13 @@ int queryMember(String data ) {
         return 4;
     }
 
+    if ((g_clientInfo.isValid) && (g_clientInfo.memberNumber.startsWith(data))) {
+        // we have a result for this query data 
+        return 2;
+    }
+
     switch (g_adminCommand) {
     case acIDLE:
-
-        if ((g_clientInfo.isValid) && (g_clientInfo.memberNumber.startsWith(data))) {
-            // we have a result for this query data 
-            return 2;
-        }
-
         // at this point we have a member number in data and we are acIDLE
         // clear the result and issue the command, the admin loop
         // will see this and take action 
@@ -1480,7 +1481,6 @@ int queryMember(String data ) {
             g_queryMemberResult = "";
             g_adminCommandData = data;
             g_adminCommand = acGETUSERINFO;
-            debugEvent("called from cloud"); //xxx
             return 0;
         }
         break;
@@ -1533,9 +1533,16 @@ int burnCard(String data){
         return 2;
     }
 
+    g_adminCommand = acBURNCARDNOW; // Admin loop will pick this up and burn the card
+    return 0;
+
+}
+
+void burnCardNow(int clientID, String cardUID) {
     // burn baby burn!
     // All this needs to happen in 10 seconds or the cloud function will time out
     
+    unsigned long processStartMilliseconds = 0;
     
     // Wait for an ISO14443A type cards (Mifare, etc.).  When one is found
     // 'uid' will be populated with the UID, and uidLength will indicate
@@ -1543,9 +1550,16 @@ int burnCard(String data){
     
     writeToLCD("Place card on","reader to burn");
     
+    processStartMilliseconds = millis();
     while(!nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
         // JUST WAIT FOR A CARD
-        // xxx need a timeout here
+        if (millis() - processStartMilliseconds > 15000) {
+            writeToLCD ("Tired of waiting", " ");
+            delay(500);
+            g_adminCommand = acIDLE;
+            g_adminCommandData = "";
+            return;
+        }
     }
     
     // test the card to determine its type
@@ -1559,7 +1573,10 @@ int burnCard(String data){
         if (cardIsReady) {
             Serial.println("\nMade fresh card to MN card OK\n");
         } else {
-            return 1;
+            writeToLCD("Could not change", "to MN type");
+            g_adminCommand = acIDLE;
+            g_adminCommandData = "";
+            return;
         }
     } else if (cardType == 1) {
         Serial.println("Maker Nexus formatted\n");        
@@ -1567,7 +1584,9 @@ int burnCard(String data){
         Serial.println("other\n");
         writeToLCD("Unable to","use this card");
         buzzerBadBeep();
-        return 1; // not factory fresh and we can't read it
+        g_adminCommand = acIDLE;
+        g_adminCommandData = "";
+        return;
     }
 
     // we now have an MN card 
@@ -1577,7 +1596,7 @@ int burnCard(String data){
     // now write data to block 0 and 1 of the MN sector using secret key B
     uint8_t clientIDChar[16];
     for (int i=0; i<16; i++){
-        clientIDChar[i] = data.c_str()[i];
+        clientIDChar[i] = String(clientID).c_str()[i];
     }
 
     writeBlockData(clientIDChar, 0,  1, g_secretKeyB );
@@ -1598,15 +1617,16 @@ int burnCard(String data){
     */
     clearClientInfo();
     Serial.println("Remove card from reader ...");
-    writeToLCD("Card Done"," ");
+    writeToLCD("Card Done","remove card");
     buzzerGoodBeeps2();
-    delay(2000);
-    writeToLCD("Admin Ready", " ");
-    
+
     while(nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
         // wait for card to be removed
     }
-    return 0;
+
+    g_adminCommand = acIDLE;
+    g_adminCommandData = "";
+
 }
 
 
@@ -2003,7 +2023,7 @@ void adminGetUserInfo(int clientID, String memberNumber) {
         if ((millis() - processStartMilliseconds > 15000) || !g_clientInfo.isValid) {
             // either the burn completed and cleared clientInfo or we've waited too long for a burn
             guiState = guiCLEANUP;
-            debugEvent("in timeout");
+            Particle.process();
         }
         break;
     
@@ -2052,6 +2072,11 @@ void loopAdmin() {
     case acIDENTIFYCARD:
         LCDSaysIdle = false;
         adminIdentifyCard();
+        break;
+
+    case acBURNCARDNOW:
+        LCDSaysIdle = false;
+        burnCardNow(g_clientInfo.clientID,g_clientInfo.RFIDCardKey);
         break;
 
     default:
