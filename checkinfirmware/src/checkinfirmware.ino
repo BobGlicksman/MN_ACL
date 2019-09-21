@@ -133,8 +133,10 @@
  *            moved clientInfo serialization to a common routine
  *            added AmountDue to clientInfo
  *      1.073 now reads and burns UID from ezf correctly
+ *      1.074 fix to burn UID
+ *            client checkin now validates UID in card against EZF and checks contract status and amount due.
 ************************************************************************/
-#define MN_FIRMWARE_VERSION 1.072
+#define MN_FIRMWARE_VERSION 1.074
 
 
 //#define TEST     // uncomment for debugging mode
@@ -252,6 +254,7 @@ struct EEPROMdata {
 struct struct_cardData {
     int clientID = 0;
     String UID = "";
+    bool isValid = false;
 } g_cardData;
 
 
@@ -613,7 +616,6 @@ void responseRFIDKeys(const char *event, const char *data) {
     
 }
 
-
 // ------------ ClientInfo Utility Functions -------------------
 
 void clearClientInfo() {
@@ -641,6 +643,15 @@ String clientInfoToJSON(int errCode, String errMsg){
         doc["ClientID"] = g_clientInfo.clientID;
         doc["Status"] = g_clientInfo.contractStatus.c_str();
         doc["AmountDue"] = g_clientInfo.amountDue;
+
+        if (g_cardData.isValid) {
+            String allowCheckin = isClientOkToCheckIn();
+            if (allowCheckin.length() == 0){
+                doc["Checkin"] = "Allowed";
+            } else {
+               doc["Checkin"] = allowCheckin.c_str();
+            }
+        }
 
         char JSON[1000];
         serializeJson(doc,JSON );
@@ -1019,6 +1030,13 @@ String isClientOkToCheckIn (){
 
 
 /*************** FUNCTIONS FOR USE IN REAL CARD READ APPLICATIONS *******************************/
+
+// ---------------- clearCardData -----------
+void clearCardData() {
+    g_cardData.isValid = false;
+    g_cardData.clientID = 0;
+    g_cardData.UID = "";
+}
 
 /**************************************************************************************
  * createTrailerBlock():  creates a 16 byte data block from two 6 byte keys and 4 bytes
@@ -1434,8 +1452,7 @@ eRetStatus readTheCard() {
 
     // we have a card presented
     digitalWrite(READY_LED,LOW);
-    g_cardData.clientID = 0;
-    g_cardData.UID = "";
+    clearCardData();
     writeToLCD("","");
   
     #ifdef TEST
@@ -1484,8 +1501,6 @@ eRetStatus readTheCard() {
         for (int i=0; i<16; i++) {
             theClientID = theClientID + String( (char) dataBlock[i] ); 
         }
-        
-        g_cardData.clientID = theClientID.toInt();
 
         // read UID and store in g_cardData
         readBlockData(dataBlock, 1,  0, g_secretKeyA);
@@ -1501,7 +1516,9 @@ eRetStatus readTheCard() {
             }
         }
 
+        g_cardData.clientID = theClientID.toInt();
         g_cardData.UID = theUID;
+        g_cardData.isValid = true;
         
         // display the status to the user
         String msg = "";
@@ -1723,6 +1740,7 @@ void burnCardNow(int clientID, String cardUID) {
     Serial.println("");
     */
     clearClientInfo();
+    clearCardData();
     Serial.println("Remove card from reader ...");
     writeToLCD("Card Done","remove card");
     buzzerGoodBeeps2();
@@ -1975,6 +1993,7 @@ enum idcState {
 
     case idcCLEANUP:
         clearClientInfo();
+        clearCardData();
         g_adminCommandData = "";
         g_adminCommand = acIDLE; 
         idcState = idcINIT;
