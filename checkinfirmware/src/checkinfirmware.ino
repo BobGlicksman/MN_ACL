@@ -132,6 +132,7 @@
  *      1.072 prefixed cloud functions with "cloud"
  *            moved clientInfo serialization to a common routine
  *            added AmountDue to clientInfo
+ *      1.073 now reads and burns UID from ezf correctly
 ************************************************************************/
 #define MN_FIRMWARE_VERSION 1.072
 
@@ -952,23 +953,69 @@ int cloudRFIDCardRead (String data) {
 // ------------ isClientOkToCheckIn --------------
 //  This routine is where we check to see if we should allow
 //  the client to check in or if we should deny them. This
-//  routine will use g_clientInfo to make the determination.
+//  routine will use g_clientInfo and g_cardData to make the determination.
 //    
-//  Returns True if client is good and false if not
+//  Returns "" if client is good and a 16 or less character message
+//      if not. Message suitable for display to user.
 //
-bool isClientOkToCheckIn (){
+String isClientOkToCheckIn (){
 
     // Test for a good account status
-    bool allowIn = false;
-    if (g_clientInfo.contractStatus.length() > 0) {
-        if (g_clientInfo.contractStatus.indexOf("Active") >= 0) {   
-            allowIn = true; 
+
+    
+    if ( ( g_cardData.UID.length() == 0) && (g_clientInfo.RFIDCardKey.length() == 0 ) ) {
+        // card and EZF both have null card UIDs so skip the UID Tests below 
+        // we assume the card is ok 
+    } else { 
+
+        debugEvent("cardUID:" + g_cardData.UID);
+        debugEvent("clientRFID:" + g_clientInfo.RFIDCardKey);
+
+        if  ( g_cardData.UID.length() != g_clientInfo.RFIDCardKey.length() ){
+            // Different UID length is an issue. 
+            return "Card revoked 1";
+        }
+
+        if  ( g_clientInfo.RFIDCardKey.indexOf(g_cardData.UID) == -1 ) {
+            // The UIDs don't match 
+            return "Card revoked 2";
         }
     }
 
-    return allowIn;
+    if ( (g_clientInfo.contractStatus.indexOf("Active") == 0) && (g_clientInfo.amountDue == 0) ) {
+        // active contract, no money due
+        return "";
+    }
+
+    if ( (g_clientInfo.contractStatus.indexOf("Pending") == 0) && (g_clientInfo.amountDue < 151) ) {
+        // pending contract, must be in renewal window.
+        // one month or less payment due (contracts that cost less than 150 will 
+        // avoid this rejection for several months)
+        return "";
+    }
+
+    // We are going to reject, let's figure out why
+
+    String allowInMessage = "Unknown reject"; 
+
+    if (g_clientInfo.contractStatus.length() == 0) {
+
+        allowInMessage = "No Contract"; // how did they get a badge if they never had a contract?
+
+    } else if (g_clientInfo.amountDue > 0) {  
+
+        allowInMessage = "Amount due: " + g_clientInfo.amountDue; 
+    
+    } else {
+
+        allowInMessage = "CStatus: " + g_clientInfo.contractStatus; // Frozen, suspended, etc 
+
+    }
+
+    return allowInMessage;
 
 }
+
 
 
 /*************** FUNCTIONS FOR USE IN REAL CARD READ APPLICATIONS *******************************/
@@ -1446,14 +1493,14 @@ eRetStatus readTheCard() {
         nfc.PrintHex(dataBlock, 16); 
 
         String theUID = "";
-        for (int i=15; i>-1; i--) {
-            if (dataBlock[i] != 0) {
-                theUID = String( (char) dataBlock[i] ) + theUID; 
+        for (int i=0; i<16; i++) {
+            if(dataBlock[i] !=0) {
+                theUID = theUID + String( (char) dataBlock[i] ); 
             } else {
-                break; // we reached a null data character;
+                break; // reached a null character
             }
         }
-        
+
         g_cardData.UID = theUID;
         
         // display the status to the user
@@ -1463,16 +1510,17 @@ eRetStatus readTheCard() {
             returnStatus = COMPLETE_FAIL;
             msg = "Card read failed";
             buzzerBadBeep();
+            delay(1000);
         } else {
             returnStatus = COMPLETE_OK;
-            msg = "CID:" + String(g_cardData.clientID);
-            msg2 = "UID:" + String(g_cardData.UID);
+            //msg = "CID:" + String(g_cardData.clientID);
+            //msg2 = "UID:" + String(g_cardData.UID);
             buzzerGoodBeep();
         }
-        writeToLCD(msg, msg2);
+       // writeToLCD(msg, msg2);
         Serial.println(msg);
         Serial.println("");  
-        delay(1000);
+        //delay(1000);
 
     }
     
@@ -1590,7 +1638,6 @@ int cloudBurnCard(String data){
 void burnCardNow(int clientID, String cardUID) {
     // burn baby burn!
     // All this needs to happen in 10 seconds or the cloud function will time out
-    
     unsigned long processStartMilliseconds = 0;
     
     // Wait for an ISO14443A type cards (Mifare, etc.).  When one is found
@@ -1649,9 +1696,15 @@ void burnCardNow(int clientID, String cardUID) {
     }
 
     uint8_t cardUIDChar[16];
+    int temp = cardUID.length();
     for (int i=0; i<16; i++){
-        cardUIDChar[i] = cardUID.c_str()[i];
+        if (i < temp){
+            cardUIDChar[i] = cardUID.c_str()[i];
+        } else {
+            cardUIDChar[i] = 0;
+        }
     }
+
 
     writeBlockData(clientIDChar, 0,  1, g_secretKeyB );
     writeBlockData(cardUIDChar, 1,  1, g_secretKeyB);
@@ -1767,7 +1820,9 @@ void loopCheckIn() {
                 processStartMilliseconds = 0;
                 writeToLCD("Timeout clientInfo", "Try Again");
                 buzzerBadBeep();
+                digitalWrite(REJECT_LED,HIGH);
                 delay(2000);
+                digitalWrite(REJECT_LED,LOW);
                 cilloopState = cilWAITFORCARD;
             }
         } // Otherwise we stay in this state
@@ -1776,23 +1831,17 @@ void loopCheckIn() {
     case cilCHECKINGIN: {
 
         // If the client meets all critera, check them in
-        bool allowIn = isClientOkToCheckIn();
-        if ( !allowIn ) {
+        String allowInMessage = isClientOkToCheckIn();
+        debugEvent("allowinmsg:" + allowInMessage);
+        if ( allowInMessage.length() > 0 ) {
             //client account status is bad
-            writeToLCD("Acct Status Bad","See Manager");
+            writeToLCD(allowInMessage,"See Manager");
             buzzerBadBeep();
             digitalWrite(REJECT_LED,HIGH);
             delay(2000);
             digitalWrite(REJECT_LED,LOW);
 
             cilloopState = cilWAITFORCARD;
-            debugEvent("contract status is not good."); 
-
-            if (g_clientInfo.contractStatus.length() >= 1) {
-                debugEvent("status: " + g_clientInfo.contractStatus);
-            }  else {
-                debugEvent("Status is null");
-            }
             
         } else {
         
@@ -1942,7 +1991,7 @@ enum idcState {
 
 // adminGetUserInfo
 //
-// Called from admin loop when admin command is acGETUSERINFO
+// Called from admin loop when admin command is acGETUSERINFO (cloudQueryMember)
 //
 // parameters
 //    if both parameters are set, only clientID will be used 
@@ -2052,8 +2101,8 @@ void adminGetUserInfo(int clientID, String memberNumber) {
         if ((millis() - processStartMilliseconds > 15000) || !g_clientInfo.isValid) {
             // either the burn completed and cleared clientInfo or we've waited too long for a burn
             guiState = guiCLEANUP;
-            Particle.process();
         }
+        //stay in this state
         break;
     
     case guiCLEANUP:
@@ -2105,7 +2154,7 @@ void loopAdmin() {
 
     case acBURNCARDNOW:
         LCDSaysIdle = false;
-        burnCardNow(g_clientInfo.clientID,g_clientInfo.RFIDCardKey);
+        burnCardNow(g_clientInfo.clientID, g_clientInfo.RFIDCardKey);
         break;
 
     default:
