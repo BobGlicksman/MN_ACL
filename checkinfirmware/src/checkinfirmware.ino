@@ -135,8 +135,16 @@
  *      1.073 now reads and burns UID from ezf correctly
  *      1.074 fix to burn UID
  *            client checkin now validates UID in card against EZF and checks contract status and amount due.
+ *            JSON returned to Admin on "card info" now includes "Checkin" which tells what would happen if the
+ *                card was used at a checkin terminal
+ * version 1.08 9/22/2019
+ *      Added logToDB() which writes to a webhook, the webhook sends data to a url for logging
+ *      Added logToDB logging to checkin loop
+ *      cloudIdentifyCard was not returning correct status, fixed
+ *      Admin identifyCard now times out if card not presented in 15 seconds
+ *      Set timezone and DST in setup() for use in logToDB()
 ************************************************************************/
-#define MN_FIRMWARE_VERSION 1.074
+#define MN_FIRMWARE_VERSION 1.08
 
 
 //#define TEST     // uncomment for debugging mode
@@ -514,6 +522,33 @@ void debugEvent (String message) {
         
         }
     }
+}
+
+// writes message to a webhook that will send it on to a cloud database
+// These have to be throttled to less than one per second on each device
+// Parameters:
+//    logEvent - a short reason for logging ("checkin","reboot","error", etc)
+//    logData - optional freeform text up to 250 characters
+//    clientID - optional if this event was for a particular client 
+void logToDB(String logEvent, String logData, int clientID){
+    const size_t capacity = JSON_OBJECT_SIZE(10);
+    DynamicJsonDocument doc(capacity);
+
+    String idea2 = Time.format(Time.now(), "%F %T");
+    doc["dateEventLocal"] = idea2.c_str();
+    doc["deviceFunction"] =  deviceTypeToString(EEPROMdata.deviceType).c_str();
+    doc["clientID"] = clientID;
+    doc["logEvent"] = logEvent.c_str();
+    doc["logData"] = logData.c_str();
+
+    char JSON[2000];
+    serializeJson(doc,JSON );
+    String publishvalue = String(JSON);
+
+    Particle.publish("RFIDLogging",publishvalue,PRIVATE);
+
+    return;
+
 }
 
 // ------------- Set Device Type ---------
@@ -1613,14 +1648,17 @@ int cloudQueryMember(String data ) {
 // ----------------------- cloudIdentifyCard --------------------
 //
 int cloudIdentifyCard (String data) {
-    //g_identifyCardResult = "";
-    g_adminCommandData = data;
-    g_adminCommand = acIDENTIFYCARD; // admin loop will see this and change state
 
-    if (g_clientInfo.isValid) {
-        return 2;
-    } else {
+    if (g_adminCommand == acIDLE) {
+        g_adminCommandData = data;
+        g_adminCommand = acIDENTIFYCARD; // admin loop will see this and change state
         return 0;
+    } else if (g_adminCommand == acIDENTIFYCARD){
+        return 1; // still working on it
+    } else if (g_clientInfo.isValid) {
+        return 2; // got the data
+    } else {
+        return 3; // uknown error
     }
 };
 
@@ -1811,6 +1849,9 @@ void loopCheckIn() {
                 writeToLCD("Timeout token", "Try Again");
                 buzzerBadBeep();
                 delay(2000);
+
+                // log this to DB 
+                logToDB("timeout waiting for token","",g_clientInfo.clientID);
                 cilloopState = cilWAITFORCARD;
             }
         //Otherwise we stay in this state
@@ -1841,6 +1882,10 @@ void loopCheckIn() {
                 digitalWrite(REJECT_LED,HIGH);
                 delay(2000);
                 digitalWrite(REJECT_LED,LOW);
+
+                // log this to DB 
+                logToDB("timeout waiting for client info","",g_clientInfo.clientID);
+
                 cilloopState = cilWAITFORCARD;
             }
         } // Otherwise we stay in this state
@@ -1858,6 +1903,9 @@ void loopCheckIn() {
             digitalWrite(REJECT_LED,HIGH);
             delay(2000);
             digitalWrite(REJECT_LED,LOW);
+            
+            // log this to DB 
+            logToDB("checkin denied","allowInMessage",g_clientInfo.clientID);
 
             cilloopState = cilWAITFORCARD;
             
@@ -1866,11 +1914,16 @@ void loopCheckIn() {
             debugEvent ("SM: now checkin client");
             // tell EZF to check someone in
             ezfCheckInClient(String(g_clientInfo.clientID));
+
             writeToLCD("Welcome",g_clientInfo.name);
             digitalWrite(ADMIT_LED,HIGH);
             buzzerGoodBeeps2();
             delay(1000);
             digitalWrite(ADMIT_LED,LOW);
+            
+            // log this to DB 
+            logToDB("checkin allowed","",g_clientInfo.clientID);
+            
             cilloopState = cilWAITFORCARD;
         
             }
@@ -1922,9 +1975,7 @@ enum idcState {
     case idcWAITFORCARD: 
         if(millis() - processStartMilliseconds > 15000){
             // timeout
-            // no action at this time. Put here in case we want to add something later
-            // Right now we just wait for the card to be presented. (or for the Android app to put the Admin
-            // loop in another state.)
+            idcState = idcCLEANUP;
         } else  {
             eRetStatus retStatus = readTheCard();
             if (retStatus == COMPLETE_OK) {
@@ -2190,6 +2241,29 @@ void loopAdmin() {
 void setup() {
 
     System.on(firmware_update, firmwareupdatehandler);
+
+    // Gawd, dealing with dst!
+    Time.zone(-8); //PST We are not dealing with DST in this device
+    bool yesDST = false;
+    if ( (Time.month() > 3) && (Time.month() < 11) ) {
+        yesDST = true;
+    }
+    if ( (Time.month() == 3) && (Time.day() > 10 ) ) {
+        yesDST = true;
+    }
+    if ( (Time.month() == 3) && (Time.day() == 10) && (Time.hour() > 2) ){
+        yesDST = true;
+    }
+    if ( (Time.month() == 11) && (Time.day() < 3 ) ) {
+        yesDST = true;
+    }
+    if ( (Time.month() == 11) && (Time.day() == 3) && (Time.hour() < 2) ){
+        yesDST = true;
+    }
+    if (yesDST) {
+        Time.beginDST();
+        debugEvent("DST is set"); // xxx
+    } 
 
     // read EEPROM data for device type 
     EEPROMRead();
