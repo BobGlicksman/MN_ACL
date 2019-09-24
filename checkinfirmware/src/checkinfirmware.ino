@@ -143,8 +143,10 @@
  *      cloudIdentifyCard was not returning correct status, fixed
  *      Admin identifyCard now times out if card not presented in 15 seconds
  *      Set timezone and DST in setup() for use in logToDB()
+ *      1.081 removed Amount Due from returned JSON and made Checkin msg "billing issue"
+ *            added FirstName to logToDB for display use
 ************************************************************************/
-#define MN_FIRMWARE_VERSION 1.08
+#define MN_FIRMWARE_VERSION 1.081
 
 
 //#define TEST     // uncomment for debugging mode
@@ -272,7 +274,8 @@ struct struct_authTokenCheckIn {
 } g_authTokenCheckIn;
 
 struct  struct_clientInfo {  // holds info on the current client
-    String name = "";
+    String lastName = "";           // lastName
+    String firstName = "";      // just the first lastName
     bool isValid = false;        // when true this sturcture has good data in it
     int clientID = 0;           // numeric value assigned by EZFacility. Guaranteed to be unique
     String RFIDCardKey = "";    // string stored in EZFacility "custom fields". We may want to change this name
@@ -538,6 +541,7 @@ void logToDB(String logEvent, String logData, int clientID){
     doc["dateEventLocal"] = idea2.c_str();
     doc["deviceFunction"] =  deviceTypeToString(EEPROMdata.deviceType).c_str();
     doc["clientID"] = clientID;
+    doc["firstName"] = g_clientInfo.firstName.c_str();
     doc["logEvent"] = logEvent.c_str();
     doc["logData"] = logData.c_str();
 
@@ -655,7 +659,8 @@ void responseRFIDKeys(const char *event, const char *data) {
 
 void clearClientInfo() {
     
-    g_clientInfo.name = "";
+    g_clientInfo.lastName = "";
+    g_clientInfo.firstName = "";
     g_clientInfo.isValid = false;
     g_clientInfo.clientID = 0;
     g_clientInfo.RFIDCardKey = "";
@@ -674,10 +679,10 @@ String clientInfoToJSON(int errCode, String errMsg){
 
         doc["ErrorCode"] = errCode;
         doc["ErrorMessage"] = errMsg.c_str();
-        doc["Name"] = g_clientInfo.name.c_str();
+        String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
+        doc["Name"] = fullName.c_str();
         doc["ClientID"] = g_clientInfo.clientID;
         doc["Status"] = g_clientInfo.contractStatus.c_str();
-        doc["AmountDue"] = g_clientInfo.amountDue;
 
         if (g_cardData.isValid) {
             String allowCheckin = isClientOkToCheckIn();
@@ -739,7 +744,8 @@ int clientInfoFromJSON (String data) {
                g_clientInfo.RFIDCardKey = root_0["CustomFields"][0]["Value"].as<char*>(); 
             }
 
-            g_clientInfo.name = String(root_0["FirstName"].as<char*>()) + " " + String(root_0["LastName"].as<char*>());
+            g_clientInfo.lastName = String(root_0["LastName"].as<char*>());
+            g_clientInfo.firstName = String(root_0["FirstName"].as<char*>());
 
             g_clientInfo.memberNumber = String(root_0["MembershipNumber"].as<char*>());
 
@@ -880,7 +886,8 @@ void ezfReceiveClientByClientID (const char *event, const char *data)  {
             g_clientInfo.RFIDCardKey = docJSON["CustomFields"][0]["Value"].as<char*>(); 
         }
         
-        g_clientInfo.name = String(docJSON["FirstName"].as<char*>()) + " " + String(docJSON["LastName"].as<char*>());
+        g_clientInfo.lastName = String(docJSON["LastName"].as<char*>());
+        g_clientInfo.firstName = String(docJSON["FirstName"].as<char*>()); 
 
         g_clientInfo.memberNumber = String(docJSON["MembershipNumber"].as<char*>());  
 
@@ -1050,7 +1057,7 @@ String isClientOkToCheckIn (){
 
     } else if (g_clientInfo.amountDue > 0) {  
 
-        allowInMessage = "Amount due: " + g_clientInfo.amountDue; 
+        allowInMessage = "Billing Issue " + g_clientInfo.amountDue; 
     
     } else {
 
@@ -1915,7 +1922,8 @@ void loopCheckIn() {
             // tell EZF to check someone in
             ezfCheckInClient(String(g_clientInfo.clientID));
 
-            writeToLCD("Welcome",g_clientInfo.name);
+            String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
+            writeToLCD("Welcome",fullName.substring(0,15));
             digitalWrite(ADMIT_LED,HIGH);
             buzzerGoodBeeps2();
             delay(1000);
@@ -2035,7 +2043,8 @@ enum idcState {
 
         g_queryMemberResult = clientInfoToJSON(0,"OK");
 
-        writeToLCD("Card is for",g_clientInfo.name);
+        String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
+        writeToLCD("Card is for",fullName.substring(0,15));
         buzzerGoodBeep();
         delay(5000);
         idcState = idcCLEANUP;
@@ -2158,7 +2167,8 @@ void adminGetUserInfo(int clientID, String memberNumber) {
 
         g_queryMemberResult = clientInfoToJSON(0, "OK");
 
-        writeToLCD("Selected",g_clientInfo.name);
+        String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
+        writeToLCD("Selected",fullName.substring(0,15));
 
         processStartMilliseconds = millis();
         guiState = guiDISPLAYINGINFO;

@@ -14,6 +14,10 @@
 // By Jim Schrempp
 
 echo "Log Submit";
+$ini_array = parse_ini_file("rfidconfig.ini", true);
+$dbUser = $ini_array["SQL_DB"]["writeUser"];
+$dbPassword = $ini_array["SQL_DB"]["writePassword"];
+$dbName = $ini_array["SQL_DB"]["dataBaseName"];
 
 // standard data from webhook
 $datePublishedAt =  cleanInput($_POST["published_at"]);
@@ -30,22 +34,24 @@ echo "<p>" . printJSONError(json_last_error());
 // data from the device's JSON
 $dateEventLocal = cleanInput($myJSON["dateEventLocal"] );
 $deviceFunction =  cleanInput($myJSON["deviceFunction"] );
+$firstName =  cleanInput($myJSON["firstName"] );
 $clientID =  cleanInput($myJSON["clientID"] );
 $logEvent =  cleanInput($myJSON["logEvent"]);
 $logData =  cleanInput($myJSON["logData"] );
 
 // put values into sql
-$con = mysqli_connect("localhost","USER","PWD","rfidlogs");
-  
+
+
 $insertSQL = 
 "INSERT INTO `rawdata`
-       (`dateEventLocal`, `coreID`, `deviceFunction`, `clientID`, `eventName`, `logEvent`, `logData`, `datePublishedAt`) 
-VALUES ('<<dateEventLocal>>', '<<coreID>>', '<<deviceFunction>>', '<<clientID>>', '<<eventName>>', '<<logEvent>>', '<<logData>>','<<datePublishedAt>>')";
+       (`dateEventLocal`, `coreID`, `deviceFunction`, `clientID`, firstName, `eventName`, `logEvent`, `logData`, `datePublishedAt`) 
+VALUES ('<<dateEventLocal>>', '<<coreID>>', '<<deviceFunction>>', '<<clientID>>', '<<firstName>>', '<<eventName>>', '<<logEvent>>', '<<logData>>','<<datePublishedAt>>')";
 
 $insertSQL = str_replace("<<dateEventLocal>>", $dateEventLocal, $insertSQL);
 $insertSQL = str_replace("<<coreID>>", $coreID, $insertSQL);
 $insertSQL = str_replace("<<deviceFunction>>", $deviceFunction, $insertSQL);
 $insertSQL = str_replace("<<clientID>>", $clientID, $insertSQL);
+$insertSQL = str_replace("<<firstName>>", $firstName, $insertSQL);
 $insertSQL = str_replace("<<eventName>>", $eventName, $insertSQL);
 $insertSQL = str_replace("<<logEvent>>", $logEvent, $insertSQL);
 $insertSQL = str_replace("<<logData>>", $logData, $insertSQL);
@@ -53,11 +59,8 @@ $insertSQL = str_replace("<<datePublishedAt>>", $datePublishedAt, $insertSQL);
 
 //echo "<p>" . $insertSQL;
 
-// Check connection
-if (mysqli_connect_errno())
-  {
-  echo "Failed to connect to MySQL: " . mysqli_connect_error();
-  }
+$con = mysqli_connect("localhost",$dbUser,$dbPassword,$dbName);
+
 
 if (mysqli_query($con, $insertSQL)) {
     echo "<p>New record created successfully";

@@ -8,7 +8,13 @@
 echo "<h2>Log Dump</h2>";
 
 // put values into sql
-$con = mysqli_connect("localhost","user","PWD","rfidlogs");
+
+$ini_array = parse_ini_file("rfidconfig.ini", true);
+$dbUser = $ini_array["SQL_DB"]["readOnlyUser"];
+$dbPassword = $ini_array["SQL_DB"]["readOnlyPassword"];
+$dbName = $ini_array["SQL_DB"]["dataBaseName"];
+
+$con = mysqli_connect("localhost",$dbUser,$dbPassword,$dbName);
   
 $selectSQL = 
 "SELECT * FROM `rawdata` ORDER BY `recNum` DESC LIMIT 100;";
@@ -36,21 +42,11 @@ if (mysqli_num_rows($result) > 0) {
         . "<td>" . $row["deviceFunction"]  . "</td>"
         . "<td>" . $row["logEvent"]  . "</td>"
         . "<td>" . $row["clientID"]  . "</td>"
+        . "<td>" . $row["firstName"]  . "</td>"
         . "<td>" . $row["logData"] 	 . "</td>";
     	
     	echo "</tr>";
-    
-    /*    echo 
-        "recNum: " . $row["recNum"] 
-        . " dateEventLocal: " . $row["dateEventLocal"] 
-        . " eventName: " . $row["eventName"] 
-        . " coreID: " . $row["coreID"] 
-        . " deviceFunction: " . $row["deviceFunction"] 
-        . " logEvent: " . $row["logEvent"] 
-        . " clientID: " . $row["clientID"] 
-        . " logData: " . $row["logData"]
-        . "<br>";
-    */
+
     }
     echo "</table>";
     

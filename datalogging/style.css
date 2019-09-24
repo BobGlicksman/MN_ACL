@@ -1,0 +1,26 @@
+
+
+table {
+  border-collapse: collapse;
+}
+
+table, th, td {
+  border: 1px solid black;
+}
+
+.IDPhoto {
+	width: 200px;
+}
+
+.photodiv {
+	float: left;
+}
+
+.photoname {
+	font-size: 200%;
+}
+
+.photodiv {
+	width: 220px;
+	text-align: center;
+}
