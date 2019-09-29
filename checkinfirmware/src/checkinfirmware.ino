@@ -145,8 +145,9 @@
  *      Set timezone and DST in setup() for use in logToDB()
  *      1.081 removed Amount Due from returned JSON and made Checkin msg "billing issue"
  *            added FirstName to logToDB for display use
+ *      1.082 fixed bug in cloudIdentifyCard 
 ************************************************************************/
-#define MN_FIRMWARE_VERSION 1.081
+#define MN_FIRMWARE_VERSION 1.082
 
 
 //#define TEST     // uncomment for debugging mode
@@ -566,6 +567,8 @@ int cloudSetDeviceType(String data) {
     if (deviceType) {
         EEPROMdata.deviceType = (eDeviceConfigType) deviceType;
         EEPROMWrite();
+        writeToLCD("Changed Type","rebooting");
+        System.reset();
         return 0;
     }
 
@@ -659,9 +662,9 @@ void responseRFIDKeys(const char *event, const char *data) {
 
 void clearClientInfo() {
     
+    g_clientInfo.isValid = false;
     g_clientInfo.lastName = "";
     g_clientInfo.firstName = "";
-    g_clientInfo.isValid = false;
     g_clientInfo.clientID = 0;
     g_clientInfo.RFIDCardKey = "";
     g_clientInfo.contractStatus = "";
@@ -1654,17 +1657,40 @@ int cloudQueryMember(String data ) {
 
 // ----------------------- cloudIdentifyCard --------------------
 //
+// The client calls this to start the identify card process then
+// continues to call as long as status 1 is returned.
+// Status 2 indicates that data is now ready in the cloud variable cardInfo 
+// Status 3 indicates an error 
 int cloudIdentifyCard (String data) {
+    
+    static bool haveReturnedADoneStatus = false;
 
     if (g_adminCommand == acIDLE) {
-        g_adminCommandData = data;
-        g_adminCommand = acIDENTIFYCARD; // admin loop will see this and change state
-        return 0;
+
+        if ( (!haveReturnedADoneStatus) && (g_clientInfo.isValid) ) {
+            // We have good data and we have not yet alerted the client
+            haveReturnedADoneStatus = true;
+            return 2;
+        } else {
+            // we are going to start a new identify card process 
+            clearClientInfo();
+            clearCardData();
+            haveReturnedADoneStatus = false;
+            g_adminCommandData = data;
+            g_adminCommand = acIDENTIFYCARD; // admin loop will see this and change state
+            return 0;
+        }
+
     } else if (g_adminCommand == acIDENTIFYCARD){
+        haveReturnedADoneStatus = false;
         return 1; // still working on it
     } else if (g_clientInfo.isValid) {
+        // it is possible to get here, but timing makes it unlikely. Once we have
+        // good data we go quickly to acIDLE
+        haveReturnedADoneStatus = true;
         return 2; // got the data
     } else {
+        haveReturnedADoneStatus = true;
         return 3; // uknown error
     }
 };
@@ -2046,14 +2072,13 @@ enum idcState {
         String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
         writeToLCD("Card is for",fullName.substring(0,15));
         buzzerGoodBeep();
-        delay(5000);
+        delay(5000);  // does this delay prevent the app from getting the info?
         idcState = idcCLEANUP;
         break;
     }
 
     case idcCLEANUP:
-        clearClientInfo();
-        clearCardData();
+
         g_adminCommandData = "";
         g_adminCommand = acIDLE; 
         idcState = idcINIT;
@@ -2378,6 +2403,7 @@ void setup() {
     Particle.variable("queryMemberResult",g_queryMemberResult);
     Particle.function("burnCard",cloudBurnCard);
     Particle.function("identifyCard",cloudIdentifyCard);
+    Particle.variable("cardInfo",g_queryMemberResult); // xxx should be queryCardInfoResult
 
     //Show all lights
     writeToLCD("Init all LEDs","should blink");
