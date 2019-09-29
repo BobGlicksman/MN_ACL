@@ -703,10 +703,55 @@ String clientInfoToJSON(int errCode, String errMsg){
 
 }
 
-
 // Parse the client JSON from EZF to load g_clientInfo
-// Member Number is now supposed to be unique
-int clientInfoFromJSON (String data) {
+// The EZF get client info by client id does not return an array.
+int clientInfoFromJSON(String data){
+
+const size_t capacity = 3*JSON_ARRAY_SIZE(2) + 2*JSON_ARRAY_SIZE(3) + 10*JSON_OBJECT_SIZE(2) + JSON_OBJECT_SIZE(20) + 1050;
+    DynamicJsonDocument docJSON(capacity);
+   
+    char temp[3000]; //This has to be long enough for an entire JSON response
+    strcpy_safe(temp, g_cibcidResponseBuffer.c_str());
+    
+    // will it parse?
+    DeserializationError err = deserializeJson(docJSON, temp );
+    JSONParseError =  err.c_str();
+    if (!err) {
+        
+        // xxx this should really be in a common routine with (search deserialize client)
+        clearClientInfo();
+
+        g_clientInfo.clientID = docJSON["ClientID"].as<int>();
+            
+        g_clientInfo.contractStatus = docJSON["MembershipContractStatus"].as<char*>();
+            
+        String fieldName = docJSON["CustomFields"][0]["Name"].as<char*>();
+            
+        if (fieldName.indexOf("RFID Card UID") >= 0) {
+            g_clientInfo.RFIDCardKey = docJSON["CustomFields"][0]["Value"].as<char*>(); 
+        }
+        
+        g_clientInfo.lastName = String(docJSON["LastName"].as<char*>());
+        g_clientInfo.firstName = String(docJSON["FirstName"].as<char*>()); 
+
+        g_clientInfo.memberNumber = String(docJSON["MembershipNumber"].as<char*>());  
+
+        g_clientInfo.amountDue  = docJSON["AmountDue"]; 
+
+        g_clientInfo.isValid = true;
+
+        return 0;
+
+    } else {
+        debugEvent("JSON parse error " + JSONParseError);
+        return 1;
+    }
+}
+
+// Parse the client JSON array from EZF to load g_clientInfo
+// Member Number is now supposed to be unique but the get API by memberNumber
+// still returns an array.
+int clientInfoFromJSONArray (String data) {
     
     // try to parse it. Return 1 if fails, else load g_clientInfo and return 0.
     
@@ -769,6 +814,9 @@ int clientInfoFromJSON (String data) {
 }
 
 
+
+
+
 // ------------- Get Client Info by MemberNumber ----------------
 
 int ezfClientByMemberNumber (String data) {
@@ -807,7 +855,7 @@ void ezfReceiveClientByMemberNumber (const char *event, const char *data)  {
 
     debugEvent("clientInfoPart "); // + String(data));
     
-    clientInfoFromJSON(g_cibmnResponseBuffer); // try to parse it
+    clientInfoFromJSONArray(g_cibmnResponseBuffer); // try to parse it
 
 }
 
@@ -865,40 +913,7 @@ void ezfReceiveClientByClientID (const char *event, const char *data)  {
     g_cibcidResponseBuffer = g_cibcidResponseBuffer + String(data);
     debugEvent ("clientInfoPart " + String(data));
     
-    const size_t capacity = 3*JSON_ARRAY_SIZE(2) + 2*JSON_ARRAY_SIZE(3) + 10*JSON_OBJECT_SIZE(2) + JSON_OBJECT_SIZE(20) + 1050;
-    DynamicJsonDocument docJSON(capacity);
-   
-    char temp[3000]; //This has to be long enough for an entire JSON response
-    strcpy_safe(temp, g_cibcidResponseBuffer.c_str());
-    
-    // will it parse?
-    DeserializationError err = deserializeJson(docJSON, temp );
-    JSONParseError =  err.c_str();
-    if (!err) {
-        
-        // xxx this should really be in a common routine with (search deserialize client)
-        clearClientInfo();
-
-        g_clientInfo.clientID = docJSON["ClientID"].as<int>();
-            
-        g_clientInfo.contractStatus = docJSON["MembershipContractStatus"].as<char*>();
-            
-        String fieldName = docJSON["CustomFields"][0]["Name"].as<char*>();
-            
-        if (fieldName.indexOf("RFID Card UID") >= 0) {
-            g_clientInfo.RFIDCardKey = docJSON["CustomFields"][0]["Value"].as<char*>(); 
-        }
-        
-        g_clientInfo.lastName = String(docJSON["LastName"].as<char*>());
-        g_clientInfo.firstName = String(docJSON["FirstName"].as<char*>()); 
-
-        g_clientInfo.memberNumber = String(docJSON["MembershipNumber"].as<char*>());  
-
-        g_clientInfo.amountDue  = docJSON["AmountDue"]; 
-
-        g_clientInfo.isValid = true;
-
-    }
+    clientInfoFromJSON(g_cibcidResponseBuffer);
 }
 
 // ----------------- GET PACKAGES BY CLIENT ID ---------------
