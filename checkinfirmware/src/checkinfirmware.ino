@@ -146,6 +146,8 @@
  *      1.081 removed Amount Due from returned JSON and made Checkin msg "billing issue"
  *            added FirstName to logToDB for display use
  *      1.082 fixed bug in cloudIdentifyCard 
+ *            added some db logging
+ *            added custom messages to readCard function
 ************************************************************************/
 #define MN_FIRMWARE_VERSION 1.082
 
@@ -565,6 +567,7 @@ int cloudSetDeviceType(String data) {
     int deviceType = data.toInt();
 
     if (deviceType) {
+        logToDB("DeviceTypeChange" + deviceTypeToString( (eDeviceConfigType) deviceType),"",0);
         EEPROMdata.deviceType = (eDeviceConfigType) deviceType;
         EEPROMWrite();
         writeToLCD("Changed Type","rebooting");
@@ -1490,7 +1493,7 @@ uint8_t testCard() {
 // try to checkin this client
 //
 
-eRetStatus readTheCard() {
+eRetStatus readTheCard(String msg1, String msg2) {
 
     eRetStatus returnStatus = IN_PROCESS;
 
@@ -1503,8 +1506,9 @@ eRetStatus readTheCard() {
     // 'uid' will be populated with the UID, and uidLength will indicate
     Serial.println("waiting for ISO14443A card to be presented to the reader ...");
     
-    writeToLCD("Place card on","reader");
-    
+    //writeToLCD("Place card on","reader");
+    writeToLCD(msg1,msg2);
+
     if(!nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
         // no card presented so we just exit
         return IN_PROCESS;
@@ -1531,6 +1535,7 @@ eRetStatus readTheCard() {
     Serial.print("\n\nCard is type ");
     if(cardType == 0) {
         Serial.println("factory fresh\n");
+        logToDB("CardNotMNType","",0);
         writeToLCD("Card is not MN","(fresh format)");
         buzzerBadBeep();
         delay(1000);
@@ -1538,6 +1543,7 @@ eRetStatus readTheCard() {
         Serial.println("Maker Nexus formatted\n");        
     } else {
         Serial.println("other card format\n");
+        logToDB("CardUnknownType","",0);
         writeToLCD("Card is not MN","(unknown card)");
         buzzerBadBeep();
         delay(1000);
@@ -1553,7 +1559,9 @@ eRetStatus readTheCard() {
 
         // now read the data using MN Key and store in g_cardData
         readBlockData(dataBlock, 0,  0, g_secretKeyA);
-        Serial.println("The clientID data is:");
+        #ifdef TEST
+            Serial.println("The clientID data is:");
+        #endif
         nfc.PrintHex(dataBlock, 16);
         Serial.println("");
 
@@ -1564,7 +1572,9 @@ eRetStatus readTheCard() {
 
         // read UID and store in g_cardData
         readBlockData(dataBlock, 1,  0, g_secretKeyA);
-        Serial.println("The MN UID data is:");
+        #ifdef TEST
+            Serial.println("The MN UID data is:");
+        #endif
         nfc.PrintHex(dataBlock, 16); 
 
         String theUID = "";
@@ -1869,7 +1879,7 @@ void loopCheckIn() {
         break;
     case cilWAITFORCARD: {
         digitalWrite(READY_LED,HIGH);
-        eRetStatus retStatus = readTheCard();
+        eRetStatus retStatus = readTheCard("Place card on","reader");
         if (retStatus == COMPLETE_OK) {
             // move to the next step
             cilloopState = cilREQUESTTOKEN;
@@ -2014,8 +2024,8 @@ enum idcState {
 
     switch (idcState) {
     case idcINIT:
-        writeToLCD("Whose Card?", "Init");
-        delay(1000);
+        //writeToLCD("Whose Card?", "Init");
+        //delay(1000);
         processStartMilliseconds = millis();
         digitalWrite(READY_LED,HIGH);
         idcState = idcWAITFORCARD;
@@ -2026,7 +2036,7 @@ enum idcState {
             // timeout
             idcState = idcCLEANUP;
         } else  {
-            eRetStatus retStatus = readTheCard();
+            eRetStatus retStatus = readTheCard("Whose Card?", " ");
             if (retStatus == COMPLETE_OK) {
                 writeToLCD("read card cID:",String(g_cardData.clientID));
                 // move to the next step
@@ -2419,6 +2429,8 @@ void setup() {
     Particle.function("burnCard",cloudBurnCard);
     Particle.function("identifyCard",cloudIdentifyCard);
     Particle.variable("cardInfo",g_queryMemberResult); // xxx should be queryCardInfoResult
+
+    logToDB("restart","",0);
 
     //Show all lights
     writeToLCD("Init all LEDs","should blink");
