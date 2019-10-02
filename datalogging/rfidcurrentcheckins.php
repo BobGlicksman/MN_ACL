@@ -34,6 +34,11 @@ $result = mysqli_query($con, $selectSQL);
 
 // Construct the page
 
+//$now = time();
+//$rightNow = date_timezone_set ( $now, 'America/New_York' );
+//$html =  str_replace("<<REFRESHTIME>>",date('Y-m-d H:i:s (e)'),$html);
+$html =  str_replace("<<REFRESHTIME>>","Updates every 15 seconds",$html);
+
 if (mysqli_num_rows($result) > 0) {
 	
 	// output data of each row
@@ -46,19 +51,21 @@ if (mysqli_num_rows($result) > 0) {
     
     $html = str_replace("<<PHOTODIVS>>",$photodivs, $html);
 
-	echo $html;
     
 } else {
 
     $html = str_replace("<<PHOTODIVS>>","No Records Found",$html);
+
 }
+
+echo $html;
 
 mysqli_close($con);
 
 return;
 
 function makeImageURL($data) {
-	return "<img class='IDPhoto' src='https://c226212.ssl.cf0.rackcdn.com/" . $data . ".jpg'>";
+	return "<img class='IDPhoto' alt='no photo' src='https://c226212.ssl.cf0.rackcdn.com/" . $data . ".jpg'>";
 }
 function makeTR($data) {
 	return "<tr>" . $data . "</tr>";

@@ -3,20 +3,20 @@
 
 <head>
   <meta charset="utf-8">
-  <title>Members Checked In Today</title>
+  <title>Device Logs</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   <link href="style.css" rel="stylesheet">
-  
-  <meta http-equiv="refresh" content="15">
 </head>
 
 <body>
-	<h1>These Members Checked In Today</h1>
-	<p class="lastrefreshtime"><<REFRESHTIME>></p>
+	<h1>Activity By Client</h1>
 	
-	<<PHOTODIVS>>
-
+	<table class="rawlogtable">
+	<<TABLEHEADER>>
+	<<TABLEROWS>>
+	</table>
+	
 </body>
 
 </html>
