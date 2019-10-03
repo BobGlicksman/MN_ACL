@@ -1,0 +1,35 @@
+
+
+table {
+  border-collapse: collapse;
+}
+
+table, th, td {
+  border: 1px solid black;
+  padding: 5px;
+}
+
+table.rawlogtable {
+    border-collapse: collapse;
+}
+
+.photodiv {
+	float: left;
+	width: 220px;
+	text-align: center;
+	border: 1px solid black;
+	padding: 10px 10px 10px 10px;
+}
+
+.IDPhoto {
+	width: 200px;
+}
+
+p.photoname {
+	margin: 10px 10px 0px 10px;
+	font-size: 200%;
+}
+
+p.lastrefreshtime {
+	
+}

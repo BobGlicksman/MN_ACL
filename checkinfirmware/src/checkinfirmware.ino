@@ -128,8 +128,28 @@
  *      Version string now shows on LCD at end of setup()
  *      Moved get of RFID tokens out of main loop and into setup(). If we don't get the keys that is a full stop failure.
  *      Added the card ID code to Admin device
+ *      1.071 bug fix to the timeout code after displaying a query name
+ *      1.072 prefixed cloud functions with "cloud"
+ *            moved clientInfo serialization to a common routine
+ *            added AmountDue to clientInfo
+ *      1.073 now reads and burns UID from ezf correctly
+ *      1.074 fix to burn UID
+ *            client checkin now validates UID in card against EZF and checks contract status and amount due.
+ *            JSON returned to Admin on "card info" now includes "Checkin" which tells what would happen if the
+ *                card was used at a checkin terminal
+ * version 1.08 9/22/2019
+ *      Added logToDB() which writes to a webhook, the webhook sends data to a url for logging
+ *      Added logToDB logging to checkin loop
+ *      cloudIdentifyCard was not returning correct status, fixed
+ *      Admin identifyCard now times out if card not presented in 15 seconds
+ *      Set timezone and DST in setup() for use in logToDB()
+ *      1.081 removed Amount Due from returned JSON and made Checkin msg "billing issue"
+ *            added FirstName to logToDB for display use
+ *      1.082 fixed bug in cloudIdentifyCard 
+ *            added some db logging
+ *            added custom messages to readCard function
 ************************************************************************/
-#define MN_FIRMWARE_VERSION 1.07
+#define MN_FIRMWARE_VERSION 1.082
 
 
 //#define TEST     // uncomment for debugging mode
@@ -247,6 +267,7 @@ struct EEPROMdata {
 struct struct_cardData {
     int clientID = 0;
     String UID = "";
+    bool isValid = false;
 } g_cardData;
 
 
@@ -256,12 +277,14 @@ struct struct_authTokenCheckIn {
 } g_authTokenCheckIn;
 
 struct  struct_clientInfo {  // holds info on the current client
-    String name = "";
+    String lastName = "";           // lastName
+    String firstName = "";      // just the first lastName
     bool isValid = false;        // when true this sturcture has good data in it
     int clientID = 0;           // numeric value assigned by EZFacility. Guaranteed to be unique
     String RFIDCardKey = "";    // string stored in EZFacility "custom fields". We may want to change this name
     String memberNumber = "";   // string stored in EZFacility. May not be unique
     String contractStatus = ""; // string returned from EZF. Values we know of: Active, Frozen, Cancelled, Suspended
+    int amountDue = 0;          // from EZF
 } g_clientInfo;
 
 
@@ -277,7 +300,8 @@ typedef enum eRetStatus {
 enum eAdminCommand {
     acIDLE = 1,
     acGETUSERINFO = 2,
-    acIDENTIFYCARD = 3
+    acIDENTIFYCARD = 3,
+    acBURNCARDNOW = 4
 };
 eAdminCommand g_adminCommand = acIDLE;
 String g_adminCommandData = "";
@@ -506,6 +530,34 @@ void debugEvent (String message) {
     }
 }
 
+// writes message to a webhook that will send it on to a cloud database
+// These have to be throttled to less than one per second on each device
+// Parameters:
+//    logEvent - a short reason for logging ("checkin","reboot","error", etc)
+//    logData - optional freeform text up to 250 characters
+//    clientID - optional if this event was for a particular client 
+void logToDB(String logEvent, String logData, int clientID){
+    const size_t capacity = JSON_OBJECT_SIZE(10);
+    DynamicJsonDocument doc(capacity);
+
+    String idea2 = Time.format(Time.now(), "%F %T");
+    doc["dateEventLocal"] = idea2.c_str();
+    doc["deviceFunction"] =  deviceTypeToString(EEPROMdata.deviceType).c_str();
+    doc["clientID"] = clientID;
+    doc["firstName"] = g_clientInfo.firstName.c_str();
+    doc["logEvent"] = logEvent.c_str();
+    doc["logData"] = logData.c_str();
+
+    char JSON[2000];
+    serializeJson(doc,JSON );
+    String publishvalue = String(JSON);
+
+    Particle.publish("RFIDLogging",publishvalue,PRIVATE);
+
+    return;
+
+}
+
 // ------------- Set Device Type ---------
 // Called with a number to set device type to determine behavior
 // Valid values are in eDeviceConfigType
@@ -515,8 +567,11 @@ int cloudSetDeviceType(String data) {
     int deviceType = data.toInt();
 
     if (deviceType) {
+        logToDB("DeviceTypeChange" + deviceTypeToString( (eDeviceConfigType) deviceType),"",0);
         EEPROMdata.deviceType = (eDeviceConfigType) deviceType;
         EEPROMWrite();
+        writeToLCD("Changed Type","rebooting");
+        System.reset();
         return 0;
     }
 
@@ -606,23 +661,100 @@ void responseRFIDKeys(const char *event, const char *data) {
     
 }
 
-
 // ------------ ClientInfo Utility Functions -------------------
 
 void clearClientInfo() {
     
-    g_clientInfo.name = "";
     g_clientInfo.isValid = false;
+    g_clientInfo.lastName = "";
+    g_clientInfo.firstName = "";
     g_clientInfo.clientID = 0;
     g_clientInfo.RFIDCardKey = "";
     g_clientInfo.contractStatus = "";
     g_clientInfo.memberNumber = "";
+    g_clientInfo.amountDue = 0;
     
 }
 
+
+// format g_clientInfo into JSON 
+String clientInfoToJSON(int errCode, String errMsg){
+
+        const size_t capacity = JSON_OBJECT_SIZE(10);
+        DynamicJsonDocument doc(capacity);
+
+        doc["ErrorCode"] = errCode;
+        doc["ErrorMessage"] = errMsg.c_str();
+        String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
+        doc["Name"] = fullName.c_str();
+        doc["ClientID"] = g_clientInfo.clientID;
+        doc["Status"] = g_clientInfo.contractStatus.c_str();
+
+        if (g_cardData.isValid) {
+            String allowCheckin = isClientOkToCheckIn();
+            if (allowCheckin.length() == 0){
+                doc["Checkin"] = "Allowed";
+            } else {
+               doc["Checkin"] = allowCheckin.c_str();
+            }
+        }
+
+        char JSON[1000];
+        serializeJson(doc,JSON );
+        String rtnValue = String(JSON);
+        return rtnValue;
+
+}
+
 // Parse the client JSON from EZF to load g_clientInfo
-// Member Number is now supposed to be unique
-int clientInfoFromJSON (String data) {
+// The EZF get client info by client id does not return an array.
+int clientInfoFromJSON(String data){
+
+const size_t capacity = 3*JSON_ARRAY_SIZE(2) + 2*JSON_ARRAY_SIZE(3) + 10*JSON_OBJECT_SIZE(2) + JSON_OBJECT_SIZE(20) + 1050;
+    DynamicJsonDocument docJSON(capacity);
+   
+    char temp[3000]; //This has to be long enough for an entire JSON response
+    strcpy_safe(temp, g_cibcidResponseBuffer.c_str());
+    
+    // will it parse?
+    DeserializationError err = deserializeJson(docJSON, temp );
+    JSONParseError =  err.c_str();
+    if (!err) {
+        
+        // xxx this should really be in a common routine with (search deserialize client)
+        clearClientInfo();
+
+        g_clientInfo.clientID = docJSON["ClientID"].as<int>();
+            
+        g_clientInfo.contractStatus = docJSON["MembershipContractStatus"].as<char*>();
+            
+        String fieldName = docJSON["CustomFields"][0]["Name"].as<char*>();
+            
+        if (fieldName.indexOf("RFID Card UID") >= 0) {
+            g_clientInfo.RFIDCardKey = docJSON["CustomFields"][0]["Value"].as<char*>(); 
+        }
+        
+        g_clientInfo.lastName = String(docJSON["LastName"].as<char*>());
+        g_clientInfo.firstName = String(docJSON["FirstName"].as<char*>()); 
+
+        g_clientInfo.memberNumber = String(docJSON["MembershipNumber"].as<char*>());  
+
+        g_clientInfo.amountDue  = docJSON["AmountDue"]; 
+
+        g_clientInfo.isValid = true;
+
+        return 0;
+
+    } else {
+        debugEvent("JSON parse error " + JSONParseError);
+        return 1;
+    }
+}
+
+// Parse the client JSON array from EZF to load g_clientInfo
+// Member Number is now supposed to be unique but the get API by memberNumber
+// still returns an array.
+int clientInfoFromJSONArray (String data) {
     
     // try to parse it. Return 1 if fails, else load g_clientInfo and return 0.
     
@@ -640,13 +772,19 @@ int clientInfoFromJSON (String data) {
          JsonObject root_1 = docJSON[1];
         if (root_1["ClientID"].as<int>() != 0)  {  // is this the correct test?
             
+            // should not be possible in EZFacility
             // member id is not unique
             g_recentErrors = "More than one client info in JSON ... " + g_recentErrors;
             writeToLCD("Err. Member Num", "not unique");
             buzzerBadBeep();
             
         } else {
+            // xxx this should really be in a common routine with (search deserialize client)
+
+            clearClientInfo();
+
             JsonObject root_0 = docJSON[0];
+
             g_clientInfo.clientID = root_0["ClientID"].as<int>();
             
             g_clientInfo.contractStatus = root_0["MembershipContractStatus"].as<char*>();
@@ -657,12 +795,15 @@ int clientInfoFromJSON (String data) {
                g_clientInfo.RFIDCardKey = root_0["CustomFields"][0]["Value"].as<char*>(); 
             }
 
-            g_clientInfo.name = String(root_0["FirstName"].as<char*>()) + " " + String(root_0["LastName"].as<char*>());
+            g_clientInfo.lastName = String(root_0["LastName"].as<char*>());
+            g_clientInfo.firstName = String(root_0["FirstName"].as<char*>());
 
             g_clientInfo.memberNumber = String(root_0["MembershipNumber"].as<char*>());
+
+            g_clientInfo.amountDue = root_0["AmountDue"]; 
             
             g_clientInfo.isValid = true;
-            
+
         }
         
         return 0;
@@ -674,6 +815,9 @@ int clientInfoFromJSON (String data) {
     }
     
 }
+
+
+
 
 
 // ------------- Get Client Info by MemberNumber ----------------
@@ -714,7 +858,7 @@ void ezfReceiveClientByMemberNumber (const char *event, const char *data)  {
 
     debugEvent("clientInfoPart "); // + String(data));
     
-    clientInfoFromJSON(g_cibmnResponseBuffer); // try to parse it
+    clientInfoFromJSONArray(g_cibmnResponseBuffer); // try to parse it
 
 }
 
@@ -766,39 +910,13 @@ int ezfClientByClientID (int clientID) {
 }
 
 
+
 void ezfReceiveClientByClientID (const char *event, const char *data)  {
     
     g_cibcidResponseBuffer = g_cibcidResponseBuffer + String(data);
     debugEvent ("clientInfoPart " + String(data));
     
-    const size_t capacity = 3*JSON_ARRAY_SIZE(2) + 2*JSON_ARRAY_SIZE(3) + 10*JSON_OBJECT_SIZE(2) + JSON_OBJECT_SIZE(20) + 1050;
-    DynamicJsonDocument docJSON(capacity);
-   
-    char temp[3000]; //This has to be long enough for an entire JSON response
-    strcpy_safe(temp, g_cibcidResponseBuffer.c_str());
-    
-    // will it parse?
-    DeserializationError err = deserializeJson(docJSON, temp );
-    JSONParseError =  err.c_str();
-    if (!err) {
-
-        g_clientInfo.clientID = docJSON["ClientID"].as<int>();
-            
-        g_clientInfo.contractStatus = docJSON["MembershipContractStatus"].as<char*>();
-            
-        String fieldName = docJSON["CustomFields"][0]["Name"].as<char*>();
-            
-        if (fieldName.indexOf("RFID Card UID") >= 0) {
-            g_clientInfo.RFIDCardKey = docJSON["CustomFields"][0]["Value"].as<char*>(); 
-        }
-        
-        g_clientInfo.name = String(docJSON["FirstName"].as<char*>()) + " " + String(docJSON["LastName"].as<char*>());
-
-        g_clientInfo.memberNumber = String(docJSON["MembershipNumber"].as<char*>());  
-
-        g_clientInfo.isValid = true;
-        
-    }
+    clientInfoFromJSON(g_cibcidResponseBuffer);
 }
 
 // ----------------- GET PACKAGES BY CLIENT ID ---------------
@@ -870,7 +988,7 @@ int ezfCheckInClient(String clientID) {
 // Called to simulate a card read. 
 // Pass in: clientID,cardUID
 
-int RFIDCardReadCloud (String data) {
+int cloudRFIDCardRead (String data) {
     
     int commaLocation = data.indexOf(",");
     if (commaLocation == -1) {
@@ -909,26 +1027,79 @@ int RFIDCardReadCloud (String data) {
 // ------------ isClientOkToCheckIn --------------
 //  This routine is where we check to see if we should allow
 //  the client to check in or if we should deny them. This
-//  routine will use g_clientInfo to make the determination.
+//  routine will use g_clientInfo and g_cardData to make the determination.
 //    
-//  Returns True if client is good and false if not
+//  Returns "" if client is good and a 16 or less character message
+//      if not. Message suitable for display to user.
 //
-bool isClientOkToCheckIn (){
+String isClientOkToCheckIn (){
 
     // Test for a good account status
-    bool allowIn = false;
-    if (g_clientInfo.contractStatus.length() > 0) {
-        if (g_clientInfo.contractStatus.indexOf("Active") >= 0) {   
-            allowIn = true; 
+
+    
+    if ( ( g_cardData.UID.length() == 0) && (g_clientInfo.RFIDCardKey.length() == 0 ) ) {
+        // card and EZF both have null card UIDs so skip the UID Tests below 
+        // we assume the card is ok 
+    } else { 
+
+        debugEvent("cardUID:" + g_cardData.UID);
+        debugEvent("clientRFID:" + g_clientInfo.RFIDCardKey);
+
+        if  ( g_cardData.UID.length() != g_clientInfo.RFIDCardKey.length() ){
+            // Different UID length is an issue. 
+            return "Card revoked 1";
+        }
+
+        if  ( g_clientInfo.RFIDCardKey.indexOf(g_cardData.UID) == -1 ) {
+            // The UIDs don't match 
+            return "Card revoked 2";
         }
     }
 
-    return allowIn;
+    if ( (g_clientInfo.contractStatus.indexOf("Active") == 0) && (g_clientInfo.amountDue == 0) ) {
+        // active contract, no money due
+        return "";
+    }
+
+    if ( (g_clientInfo.contractStatus.indexOf("Pending") == 0) && (g_clientInfo.amountDue < 151) ) {
+        // pending contract, must be in renewal window.
+        // one month or less payment due (contracts that cost less than 150 will 
+        // avoid this rejection for several months)
+        return "";
+    }
+
+    // We are going to reject, let's figure out why
+
+    String allowInMessage = "Unknown reject"; 
+
+    if (g_clientInfo.contractStatus.length() == 0) {
+
+        allowInMessage = "No Contract"; // how did they get a badge if they never had a contract?
+
+    } else if (g_clientInfo.amountDue > 0) {  
+
+        allowInMessage = "Billing Issue " + g_clientInfo.amountDue; 
+    
+    } else {
+
+        allowInMessage = "CStatus: " + g_clientInfo.contractStatus; // Frozen, suspended, etc 
+
+    }
+
+    return allowInMessage;
 
 }
 
 
+
 /*************** FUNCTIONS FOR USE IN REAL CARD READ APPLICATIONS *******************************/
+
+// ---------------- clearCardData -----------
+void clearCardData() {
+    g_cardData.isValid = false;
+    g_cardData.clientID = 0;
+    g_cardData.UID = "";
+}
 
 /**************************************************************************************
  * createTrailerBlock():  creates a 16 byte data block from two 6 byte keys and 4 bytes
@@ -1322,7 +1493,7 @@ uint8_t testCard() {
 // try to checkin this client
 //
 
-eRetStatus readTheCard() {
+eRetStatus readTheCard(String msg1, String msg2) {
 
     eRetStatus returnStatus = IN_PROCESS;
 
@@ -1335,8 +1506,9 @@ eRetStatus readTheCard() {
     // 'uid' will be populated with the UID, and uidLength will indicate
     Serial.println("waiting for ISO14443A card to be presented to the reader ...");
     
-    writeToLCD("Place card on","reader");
-    
+    //writeToLCD("Place card on","reader");
+    writeToLCD(msg1,msg2);
+
     if(!nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
         // no card presented so we just exit
         return IN_PROCESS;
@@ -1344,8 +1516,7 @@ eRetStatus readTheCard() {
 
     // we have a card presented
     digitalWrite(READY_LED,LOW);
-    g_cardData.clientID = 0;
-    g_cardData.UID = "";
+    clearCardData();
     writeToLCD("","");
   
     #ifdef TEST
@@ -1364,6 +1535,7 @@ eRetStatus readTheCard() {
     Serial.print("\n\nCard is type ");
     if(cardType == 0) {
         Serial.println("factory fresh\n");
+        logToDB("CardNotMNType","",0);
         writeToLCD("Card is not MN","(fresh format)");
         buzzerBadBeep();
         delay(1000);
@@ -1371,6 +1543,7 @@ eRetStatus readTheCard() {
         Serial.println("Maker Nexus formatted\n");        
     } else {
         Serial.println("other card format\n");
+        logToDB("CardUnknownType","",0);
         writeToLCD("Card is not MN","(unknown card)");
         buzzerBadBeep();
         delay(1000);
@@ -1386,7 +1559,9 @@ eRetStatus readTheCard() {
 
         // now read the data using MN Key and store in g_cardData
         readBlockData(dataBlock, 0,  0, g_secretKeyA);
-        Serial.println("The clientID data is:");
+        #ifdef TEST
+            Serial.println("The clientID data is:");
+        #endif
         nfc.PrintHex(dataBlock, 16);
         Serial.println("");
 
@@ -1394,39 +1569,45 @@ eRetStatus readTheCard() {
         for (int i=0; i<16; i++) {
             theClientID = theClientID + String( (char) dataBlock[i] ); 
         }
-        
-        g_cardData.clientID = theClientID.toInt();
 
         // read UID and store in g_cardData
         readBlockData(dataBlock, 1,  0, g_secretKeyA);
-        Serial.println("The MN UID data is:");
+        #ifdef TEST
+            Serial.println("The MN UID data is:");
+        #endif
         nfc.PrintHex(dataBlock, 16); 
 
         String theUID = "";
-        for (int i=15; i>-1; i--) {
-            if (dataBlock[i] != 0) {
-                theUID = String( (char) dataBlock[i] ) + theUID; 
+        for (int i=0; i<16; i++) {
+            if(dataBlock[i] !=0) {
+                theUID = theUID + String( (char) dataBlock[i] ); 
             } else {
-                break; // we reached a null data character;
+                break; // reached a null character
             }
         }
-        
+
+        g_cardData.clientID = theClientID.toInt();
         g_cardData.UID = theUID;
+        g_cardData.isValid = true;
         
         // display the status to the user
         String msg = "";
+        String msg2 = "";
         if (g_cardData.clientID == 0 ) {
             returnStatus = COMPLETE_FAIL;
             msg = "Card read failed";
             buzzerBadBeep();
+            delay(1000);
         } else {
             returnStatus = COMPLETE_OK;
-            msg = "CID:" + String(g_cardData.clientID);
+            //msg = "CID:" + String(g_cardData.clientID);
+            //msg2 = "UID:" + String(g_cardData.UID);
             buzzerGoodBeep();
         }
-        writeToLCD(msg, "");
+       // writeToLCD(msg, msg2);
         Serial.println(msg);
         Serial.println("");  
+        //delay(1000);
 
     }
     
@@ -1446,7 +1627,7 @@ eRetStatus readTheCard() {
 //  These functions are called by the Admin Android app
 //
 
-// queryMember - cloud function
+// cloudQueryMember - cloud function
 //    memberNumber string to be lookup up in the CRM
 //    results will be in cloud variable g_queryMemberResult
 // returns:
@@ -1457,7 +1638,7 @@ eRetStatus readTheCard() {
 //	4 = memberNumber was not a number or was 0
 //	5 = other error, see LCD panel on device
 
-int queryMember(String data ) {
+int cloudQueryMember(String data ) {
 
     int queryMemberNum = data.toInt();
     if (queryMemberNum == 0){
@@ -1465,14 +1646,13 @@ int queryMember(String data ) {
         return 4;
     }
 
+    if ((g_clientInfo.isValid) && (g_clientInfo.memberNumber.startsWith(data))) {
+        // we have a result for this query data 
+        return 2;
+    }
+
     switch (g_adminCommand) {
     case acIDLE:
-
-        if ((g_clientInfo.isValid) && (g_clientInfo.memberNumber.startsWith(data))) {
-            // we have a result for this query data 
-            return 2;
-        }
-
         // at this point we have a member number in data and we are acIDLE
         // clear the result and issue the command, the admin loop
         // will see this and take action 
@@ -1480,7 +1660,6 @@ int queryMember(String data ) {
             g_queryMemberResult = "";
             g_adminCommandData = data;
             g_adminCommand = acGETUSERINFO;
-            debugEvent("called from cloud"); //xxx
             return 0;
         }
         break;
@@ -1501,17 +1680,48 @@ int queryMember(String data ) {
     return 5; // should never get here.
 };
 
-// ----------------------- identifyCard --------------------
+// ----------------------- cloudIdentifyCard --------------------
 //
-int identifyCard (String data) {
-    //g_identifyCardResult = "";
-    g_adminCommandData = data;
-    g_adminCommand = acIDENTIFYCARD; // admin loop will see this and change state
-    return 0;
+// The client calls this to start the identify card process then
+// continues to call as long as status 1 is returned.
+// Status 2 indicates that data is now ready in the cloud variable cardInfo 
+// Status 3 indicates an error 
+int cloudIdentifyCard (String data) {
+    
+    static bool haveReturnedADoneStatus = false;
+
+    if (g_adminCommand == acIDLE) {
+
+        if ( (!haveReturnedADoneStatus) && (g_clientInfo.isValid) ) {
+            // We have good data and we have not yet alerted the client
+            haveReturnedADoneStatus = true;
+            return 2;
+        } else {
+            // we are going to start a new identify card process 
+            clearClientInfo();
+            clearCardData();
+            haveReturnedADoneStatus = false;
+            g_adminCommandData = data;
+            g_adminCommand = acIDENTIFYCARD; // admin loop will see this and change state
+            return 0;
+        }
+
+    } else if (g_adminCommand == acIDENTIFYCARD){
+        haveReturnedADoneStatus = false;
+        return 1; // still working on it
+    } else if (g_clientInfo.isValid) {
+        // it is possible to get here, but timing makes it unlikely. Once we have
+        // good data we go quickly to acIDLE
+        haveReturnedADoneStatus = true;
+        return 2; // got the data
+    } else {
+        haveReturnedADoneStatus = true;
+        return 3; // uknown error
+    }
 };
 
-// ----------------------- burnCard ------------------------
-// burnCard - cloud function
+// ----------------------- cloudBurnCard ------------------------
+// cloudBurnCard - cloud function
 //     data is the string representation of the clientID for this card
 //         it must match the value in g_clientInfo
 // returns:
@@ -1520,7 +1730,7 @@ int identifyCard (String data) {
 //	    2 = clientID does not match clientID from last queryMember call
 //      3 = data is not a number or is 0
 
-int burnCard(String data){
+int cloudBurnCard(String data){
 
     int clientID = data.toInt();
     if (clientID == 0) {
@@ -1533,9 +1743,15 @@ int burnCard(String data){
         return 2;
     }
 
+    g_adminCommand = acBURNCARDNOW; // Admin loop will pick this up and burn the card
+    return 0;
+
+}
+
+void burnCardNow(int clientID, String cardUID) {
     // burn baby burn!
     // All this needs to happen in 10 seconds or the cloud function will time out
-    
+    unsigned long processStartMilliseconds = 0;
     
     // Wait for an ISO14443A type cards (Mifare, etc.).  When one is found
     // 'uid' will be populated with the UID, and uidLength will indicate
@@ -1543,9 +1759,16 @@ int burnCard(String data){
     
     writeToLCD("Place card on","reader to burn");
     
+    processStartMilliseconds = millis();
     while(!nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
         // JUST WAIT FOR A CARD
-        // xxx need a timeout here
+        if (millis() - processStartMilliseconds > 15000) {
+            writeToLCD ("Tired of waiting", " ");
+            delay(500);
+            g_adminCommand = acIDLE;
+            g_adminCommandData = "";
+            return;
+        }
     }
     
     // test the card to determine its type
@@ -1559,7 +1782,10 @@ int burnCard(String data){
         if (cardIsReady) {
             Serial.println("\nMade fresh card to MN card OK\n");
         } else {
-            return 1;
+            writeToLCD("Could not change", "to MN type");
+            g_adminCommand = acIDLE;
+            g_adminCommandData = "";
+            return;
         }
     } else if (cardType == 1) {
         Serial.println("Maker Nexus formatted\n");        
@@ -1567,7 +1793,9 @@ int burnCard(String data){
         Serial.println("other\n");
         writeToLCD("Unable to","use this card");
         buzzerBadBeep();
-        return 1; // not factory fresh and we can't read it
+        g_adminCommand = acIDLE;
+        g_adminCommandData = "";
+        return;
     }
 
     // we now have an MN card 
@@ -1577,11 +1805,22 @@ int burnCard(String data){
     // now write data to block 0 and 1 of the MN sector using secret key B
     uint8_t clientIDChar[16];
     for (int i=0; i<16; i++){
-        clientIDChar[i] = data.c_str()[i];
+        clientIDChar[i] = String(clientID).c_str()[i];
     }
 
+    uint8_t cardUIDChar[16];
+    int temp = cardUID.length();
+    for (int i=0; i<16; i++){
+        if (i < temp){
+            cardUIDChar[i] = cardUID.c_str()[i];
+        } else {
+            cardUIDChar[i] = 0;
+        }
+    }
+
+
     writeBlockData(clientIDChar, 0,  1, g_secretKeyB );
-    writeBlockData(TEST_PAT_2, 1,  1, g_secretKeyB);
+    writeBlockData(cardUIDChar, 1,  1, g_secretKeyB);
     /*
     uint8_t dataBlock[] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15}; //  16 byte buffer to hold a block of data
     // now read the data back using MN secret key A
@@ -1597,16 +1836,18 @@ int burnCard(String data){
     Serial.println("");
     */
     clearClientInfo();
+    clearCardData();
     Serial.println("Remove card from reader ...");
-    writeToLCD("Card Done"," ");
+    writeToLCD("Card Done","remove card");
     buzzerGoodBeeps2();
-    delay(2000);
-    writeToLCD("Admin Ready", " ");
-    
+
     while(nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
         // wait for card to be removed
     }
-    return 0;
+
+    g_adminCommand = acIDLE;
+    g_adminCommandData = "";
+
 }
 
 
@@ -1638,7 +1879,7 @@ void loopCheckIn() {
         break;
     case cilWAITFORCARD: {
         digitalWrite(READY_LED,HIGH);
-        eRetStatus retStatus = readTheCard();
+        eRetStatus retStatus = readTheCard("Place card on","reader");
         if (retStatus == COMPLETE_OK) {
             // move to the next step
             cilloopState = cilREQUESTTOKEN;
@@ -1666,6 +1907,9 @@ void loopCheckIn() {
                 writeToLCD("Timeout token", "Try Again");
                 buzzerBadBeep();
                 delay(2000);
+
+                // log this to DB 
+                logToDB("timeout waiting for token","",g_clientInfo.clientID);
                 cilloopState = cilWAITFORCARD;
             }
         //Otherwise we stay in this state
@@ -1693,7 +1937,13 @@ void loopCheckIn() {
                 processStartMilliseconds = 0;
                 writeToLCD("Timeout clientInfo", "Try Again");
                 buzzerBadBeep();
+                digitalWrite(REJECT_LED,HIGH);
                 delay(2000);
+                digitalWrite(REJECT_LED,LOW);
+
+                // log this to DB 
+                logToDB("timeout waiting for client info","",g_clientInfo.clientID);
+
                 cilloopState = cilWAITFORCARD;
             }
         } // Otherwise we stay in this state
@@ -1702,34 +1952,37 @@ void loopCheckIn() {
     case cilCHECKINGIN: {
 
         // If the client meets all critera, check them in
-        bool allowIn = isClientOkToCheckIn();
-        if ( !allowIn ) {
+        String allowInMessage = isClientOkToCheckIn();
+        debugEvent("allowinmsg:" + allowInMessage);
+        if ( allowInMessage.length() > 0 ) {
             //client account status is bad
-            writeToLCD("Acct Status Bad","See Manager");
+            writeToLCD(allowInMessage,"See Manager");
             buzzerBadBeep();
             digitalWrite(REJECT_LED,HIGH);
             delay(2000);
             digitalWrite(REJECT_LED,LOW);
+            
+            // log this to DB 
+            logToDB("checkin denied","allowInMessage",g_clientInfo.clientID);
 
             cilloopState = cilWAITFORCARD;
-            debugEvent("contract status is not good."); 
-
-            if (g_clientInfo.contractStatus.length() >= 1) {
-                debugEvent("status: " + g_clientInfo.contractStatus);
-            }  else {
-                debugEvent("Status is null");
-            }
             
         } else {
         
             debugEvent ("SM: now checkin client");
             // tell EZF to check someone in
             ezfCheckInClient(String(g_clientInfo.clientID));
-            writeToLCD("Welcome",g_clientInfo.name);
+
+            String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
+            writeToLCD("Welcome",fullName.substring(0,15));
             digitalWrite(ADMIT_LED,HIGH);
             buzzerGoodBeeps2();
             delay(1000);
             digitalWrite(ADMIT_LED,LOW);
+            
+            // log this to DB 
+            logToDB("checkin allowed","",g_clientInfo.clientID);
+            
             cilloopState = cilWAITFORCARD;
         
             }
@@ -1771,8 +2024,8 @@ enum idcState {
 
     switch (idcState) {
     case idcINIT:
-        writeToLCD("Whose Card?", "Init");
-        delay(1000);
+        //writeToLCD("Whose Card?", "Init");
+        //delay(1000);
         processStartMilliseconds = millis();
         digitalWrite(READY_LED,HIGH);
         idcState = idcWAITFORCARD;
@@ -1781,11 +2034,9 @@ enum idcState {
     case idcWAITFORCARD: 
         if(millis() - processStartMilliseconds > 15000){
             // timeout
-            // no action at this time. Put here in case we want to add something later
-            // Right now we just wait for the card to be presented. (or for the Android app to put the Admin
-            // loop in another state.)
+            idcState = idcCLEANUP;
         } else  {
-            eRetStatus retStatus = readTheCard();
+            eRetStatus retStatus = readTheCard("Whose Card?", " ");
             if (retStatus == COMPLETE_OK) {
                 writeToLCD("read card cID:",String(g_cardData.clientID));
                 // move to the next step
@@ -1839,32 +2090,20 @@ enum idcState {
         } // Otherwise we stay in this state
         break;
 
-
     case idcFORMATINFO: {
 
-        const size_t capacity = JSON_OBJECT_SIZE(8);
-        DynamicJsonDocument doc(capacity);
+        g_queryMemberResult = clientInfoToJSON(0,"OK");
 
-        doc["ErrorCode"] = 0;
-        doc["ErrorMessage"] = "OK";
-        doc["Name"] = g_clientInfo.name.c_str();
-        doc["ClientID"] = g_clientInfo.clientID;
-        doc["AcctStatus"] = g_clientInfo.contractStatus.c_str();
-
-        char JSON[1000];
-        serializeJson(doc,JSON );
-        g_queryMemberResult = String(JSON);
-        //g_queryMemberResult = "{\"ErrorCode\":0,\"Name\":\"Jim S\",\"ClientID\":12345}";
-
-        writeToLCD("Card is for",g_clientInfo.name);
+        String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
+        writeToLCD("Card is for",fullName.substring(0,15));
         buzzerGoodBeep();
-        delay(5000);
+        delay(5000);  // does this delay prevent the app from getting the info?
         idcState = idcCLEANUP;
         break;
     }
 
     case idcCLEANUP:
-        clearClientInfo();
+
         g_adminCommandData = "";
         g_adminCommand = acIDLE; 
         idcState = idcINIT;
@@ -1881,7 +2120,7 @@ enum idcState {
 
 // adminGetUserInfo
 //
-// Called from admin loop when admin command is acGETUSERINFO
+// Called from admin loop when admin command is acGETUSERINFO (cloudQueryMember)
 //
 // parameters
 //    if both parameters are set, only clientID will be used 
@@ -1976,26 +2215,15 @@ void adminGetUserInfo(int clientID, String memberNumber) {
 
     case guiFORMATINFO: {
 
-        const size_t capacity = JSON_OBJECT_SIZE(8);
-        DynamicJsonDocument doc(capacity);
+        g_queryMemberResult = clientInfoToJSON(0, "OK");
 
-        doc["ErrorCode"] = 0;
-        doc["ErrorMessage"] = "OK";
-        doc["Name"] = g_clientInfo.name.c_str();
-        doc["ClientID"] = g_clientInfo.clientID;
-        doc["AcctStatus"] = g_clientInfo.contractStatus.c_str();
-
-        char JSON[1000];
-        serializeJson(doc,JSON );
-        g_queryMemberResult = String(JSON);
-        //g_queryMemberResult = "{\"ErrorCode\":0,\"Name\":\"Jim S\",\"ClientID\":12345}";
-
-        writeToLCD("Selected",g_clientInfo.name);
+        String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
+        writeToLCD("Selected",fullName.substring(0,15));
 
         processStartMilliseconds = millis();
         guiState = guiDISPLAYINGINFO;
 
- // we got a response
+        // we got a response
         break;
     }
 
@@ -2003,8 +2231,8 @@ void adminGetUserInfo(int clientID, String memberNumber) {
         if ((millis() - processStartMilliseconds > 15000) || !g_clientInfo.isValid) {
             // either the burn completed and cleared clientInfo or we've waited too long for a burn
             guiState = guiCLEANUP;
-            debugEvent("in timeout");
         }
+        //stay in this state
         break;
     
     case guiCLEANUP:
@@ -2054,6 +2282,11 @@ void loopAdmin() {
         adminIdentifyCard();
         break;
 
+    case acBURNCARDNOW:
+        LCDSaysIdle = false;
+        burnCardNow(g_clientInfo.clientID, g_clientInfo.RFIDCardKey);
+        break;
+
     default:
         break;
     }
@@ -2068,6 +2301,29 @@ void loopAdmin() {
 void setup() {
 
     System.on(firmware_update, firmwareupdatehandler);
+
+    // Gawd, dealing with dst!
+    Time.zone(-8); //PST We are not dealing with DST in this device
+    bool yesDST = false;
+    if ( (Time.month() > 3) && (Time.month() < 11) ) {
+        yesDST = true;
+    }
+    if ( (Time.month() == 3) && (Time.day() > 10 ) ) {
+        yesDST = true;
+    }
+    if ( (Time.month() == 3) && (Time.day() == 10) && (Time.hour() > 2) ){
+        yesDST = true;
+    }
+    if ( (Time.month() == 11) && (Time.day() < 3 ) ) {
+        yesDST = true;
+    }
+    if ( (Time.month() == 11) && (Time.day() == 3) && (Time.hour() < 2) ){
+        yesDST = true;
+    }
+    if (yesDST) {
+        Time.beginDST();
+        debugEvent("DST is set"); // xxx
+    } 
 
     // read EEPROM data for device type 
     EEPROMRead();
@@ -2155,7 +2411,7 @@ void setup() {
     success = Particle.function("SetDeviceType", cloudSetDeviceType);
 
     // Used to test CheckIn
-    success = Particle.function("RFIDCardRead", RFIDCardReadCloud);
+    success = Particle.function("RFIDCardRead", cloudRFIDCardRead);
 
     // Needed for Checkin
     Particle.subscribe(System.deviceID() + "ezfCheckInToken", ezfReceiveCheckInToken, MY_DEVICES);
@@ -2168,10 +2424,13 @@ void setup() {
     //Particle.subscribe(System.deviceID() + "ezfGetPackagesByClientID",ezfReceivePackagesByClientID, MY_DEVICES);
 
     // Used by Admin Device
-    Particle.function("queryMember",queryMember);
+    Particle.function("queryMember",cloudQueryMember);
     Particle.variable("queryMemberResult",g_queryMemberResult);
-    Particle.function("burnCard",burnCard);
-    Particle.function("identifyCard",identifyCard);
+    Particle.function("burnCard",cloudBurnCard);
+    Particle.function("identifyCard",cloudIdentifyCard);
+    Particle.variable("cardInfo",g_queryMemberResult); // xxx should be queryCardInfoResult
+
+    logToDB("restart","",0);
 
     //Show all lights
     writeToLCD("Init all LEDs","should blink");

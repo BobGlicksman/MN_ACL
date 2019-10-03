@@ -5,6 +5,13 @@ click Custom Template and post one of these packages in the text box.
 Note that private keys, accounts, and passwords have been removed from this
 file.
 
+{
+    "event": "RFIDLogging",
+    "url": "http://somewhere.com/rfidlog.php",
+    "requestType": "POST",
+    "noDefaults": false,
+    "rejectUnauthorized": false
+}
 
 {
     "event": "ezfClientByMemberNumber",
@@ -93,7 +100,7 @@ file.
     "requestType": "GET",
     "noDefaults": true,
     "rejectUnauthorized": false,
-    "responseTemplate": "{\"WriteKey\":[160,161,162,163,164,165],\"ReadKey\":[176,177,178,179,180,181] }",
+    "responseTemplate": "{\"WriteKey\":[0,0,0,0,0,0],\"ReadKey\":[0,0,0,0,0,0] }",
     "query": {
         "junk": "junk"
     }
