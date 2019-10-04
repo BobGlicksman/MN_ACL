@@ -1561,9 +1561,9 @@ eRetStatus readTheCard(String msg1, String msg2) {
         readBlockData(dataBlock, 0,  0, g_secretKeyA);
         #ifdef TEST
             Serial.println("The clientID data is:");
+            nfc.PrintHex(dataBlock, 16);
+            Serial.println("");
         #endif
-        nfc.PrintHex(dataBlock, 16);
-        Serial.println("");
 
         String theClientID = "";
         for (int i=0; i<16; i++) {
@@ -1574,9 +1574,9 @@ eRetStatus readTheCard(String msg1, String msg2) {
         readBlockData(dataBlock, 1,  0, g_secretKeyA);
         #ifdef TEST
             Serial.println("The MN UID data is:");
+            nfc.PrintHex(dataBlock, 16);
         #endif
-        nfc.PrintHex(dataBlock, 16); 
-
+         
         String theUID = "";
         for (int i=0; i<16; i++) {
             if(dataBlock[i] !=0) {
@@ -1611,8 +1611,11 @@ eRetStatus readTheCard(String msg1, String msg2) {
 
     }
     
-    Serial.println("Remove card from reader ...");
-    writeToLCD("","Remove card ...");
+    if (nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
+        // card is on the reader, put up a message
+        Serial.println("Remove card from reader ...");
+        writeToLCD("","Remove card ...");
+    }
     
     while(nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
         // wait for card to be removed
@@ -1879,7 +1882,7 @@ void loopCheckIn() {
         break;
     case cilWAITFORCARD: {
         digitalWrite(READY_LED,HIGH);
-        eRetStatus retStatus = readTheCard("Place card on","reader");
+        eRetStatus retStatus = readTheCard("Place card on","spot to checkin");
         if (retStatus == COMPLETE_OK) {
             // move to the next step
             cilloopState = cilREQUESTTOKEN;
@@ -1954,6 +1957,7 @@ void loopCheckIn() {
         // If the client meets all critera, check them in
         String allowInMessage = isClientOkToCheckIn();
         debugEvent("allowinmsg:" + allowInMessage);
+
         if ( allowInMessage.length() > 0 ) {
             //client account status is bad
             writeToLCD(allowInMessage,"See Manager");
@@ -1963,7 +1967,7 @@ void loopCheckIn() {
             digitalWrite(REJECT_LED,LOW);
             
             // log this to DB 
-            logToDB("checkin denied","allowInMessage",g_clientInfo.clientID);
+            logToDB("checkin denied",allowInMessage,g_clientInfo.clientID);
 
             cilloopState = cilWAITFORCARD;
             
