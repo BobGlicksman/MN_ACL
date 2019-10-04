@@ -7,19 +7,19 @@
  * administration.
  * 
  * (c) 2019, Team Practical Projects, Bob Glicksman, Jim Schrempp
- * version 1.4; by: Bob Glicksman; 9/07/19
+ * version 1.5; by: Bob Glicksman; 10/04/19
  * *****************************************************************************************/
 
 // Global variables
-String deviceInfo = "Firmware version 1.4. Last reset @ ";
+String deviceInfo = "Firmware version 1.5. Last reset @ ";
 String memberData = "";
-String cardInfo = "";
+String identifyCardResult = "";
 
 void setup() {
     // Cloud vartiables for the app to read
     Particle.variable("deviceInfo", deviceInfo);
     Particle.variable("queryMemberResult", memberData);
-    Particle.variable("cardInfo", cardInfo);
+    Particle.variable("identifyCardResult", identifyCardResult);
     
     // Cloud functions for the app to call
     Particle.function("queryMember", queryMember);
@@ -61,7 +61,7 @@ int queryMember(String memberNumber)
 
     The return value is an int with the following encoding:
 
-    	0 = query accepted
+    0 = query accepted
 	1 = query is underway
 	2 = query is done and results are in the cloud variable (including any error report)
 	3 = query was already underway, this query is rejected
@@ -83,6 +83,7 @@ int queryMember(String memberNumber)
         Name : Bob Glicksman
 	    ClientID : 12345678
     	Status : Active
+    	Dues: not current
 
     Where ErrorCode is 
 	    0 = member found and membership data is in the JSON.
@@ -95,9 +96,9 @@ int queryMember(String memberNumber)
 ************************************************************/
 int queryMember(String memberNumber) {
     // define some member data
-    String memberBob = "{\"ErrorCode\":0, \"ErrorMessage\":\"OK\", \"Name\":\"Bob Glicksman\", \"ClientID\":12345678, \"Status\":\"deadbeat\"}";
-    String memberJim = "{\"ErrorCode\":0, \"ErrorMessage\":\"OK\", \"Name\":\"Jim Schrempp\", \"ClientID\":98765432, \"Status\":\"active\"}";
-    String somethingWrong = "{\"ErrorCode\":1, \"ErrorMessage\":\"member not found\", \"Name\":\"not found\", \"ClientID\":0, \"Status\":\"none\"}";
+    String memberBob = "{\"ErrorCode\":0, \"ErrorMessage\":\"OK\", \"Name\":\"Bob Glicksman\", \"ClientID\":12345678, \"Status\":\"deadbeat\", \"Dues\":\"not current\"}";
+    String memberJim = "{\"ErrorCode\":0, \"ErrorMessage\":\"OK\", \"Name\":\"Jim Schrempp\", \"ClientID\":98765432, \"Status\":\"active\", \"Dues\":\"current\"}";
+    String somethingWrong = "{\"ErrorCode\":1, \"ErrorMessage\":\"member not found\", \"Name\":\"not found\", \"ClientID\":0, \"Status\":\"none\", \"Dues\":\"not valid\"}";
     
     static int state = 0;
     static int resultCode = 2;  // initialize for good data
@@ -178,7 +179,7 @@ int burnCard(String clientID)
     The return value is an int with the following encoding:
 
 	0 = function called successfully; follow instructions on the LCD
-    	1 = failed to contact card reader/write
+    1 = failed to contact card reader/write
 
 ************************************************************/
 int burnCard(String clientID) {
@@ -205,7 +206,7 @@ int resetCard(String dummy)
     
     The return value is an int with the following encoding:
 
-    	0 = function called; follow instructions on the LCD panel
+    0 = function called; follow instructions on the LCD panel
 	1 = failure to contact the card reader/writer hardware
 
 ************************************************************/
@@ -234,35 +235,36 @@ int identifyCard(String dummy)
 
     The return value is an int with the following encoding:
 
-    	0 = card is MN formatted; query for member data initiated
+    0 = query for member data initiated
 	1 = query is underway (return in one second)
 	2 = query complete; card owner data is in the string memberInformation
-	3 = card is factory fresh (blank)
-    	4 = card not identified; card format unknown.
+	3 = unknown error
 
 
     Successful query will load the JSON representation of member data from 
         EZ Facility into the cloud variable:
 
-	String memberInformation;
+	String identifyCardResult;
 
-    Where memberInformation is JSON formatted name:value pairs.  The GUI will present 
+    Where identifyCardResult is JSON formatted name:value pairs.  The GUI will present 
         each JSON name as a literal and each JSON value next to the variable name.  
         An example of name:value pairs is:
 
         ErrorCode: 0
-	ErrorMessage: OK
+	    ErrorMessage: OK
         Name : Bob Glicksman
         Member Number :  7654
-	Card Status :  Current (alternative: Revoked)
+	    Card Status :  Current (alternative: Revoked)
+	    Dues: current (or not current)
+	    Checkin: OK (or not OK)
 
 
 **********************************************************************/
 int identifyCard(String dummy) {
     // define some member data
-    String cardBob = "{\"ErrorCode\":0, \"ErrorMessage\":\"OK\", \"Name\":\"Bob Glicksman\", \"Member Number\":1234, \"Card Status\":\"current\"}";
-    String cardJim = "{\"ErrorCode\":0, \"ErrorMessage\":\"OK\", \"Name\":\"Jim Schrempp\", \"Member Number\":8765, \"Card Status\":\"revoked\"}";
-    String somethingWrong = "{\"ErrorCode\":3, \"ErrorMessage\":\"member not found\", \"Name\":\"not found\", \"Member Number\":0, \"Card Status\":\"bad card\"}";
+    String cardBob = "{\"ErrorCode\":0, \"ErrorMessage\":\"OK\", \"Name\":\"Bob Glicksman\", \"Member Number\":1234, \"Card Status\":\"current\", \"Dues\":\"not current\", \"Checkin\":\"OK\"}";
+    String cardJim = "{\"ErrorCode\":0, \"ErrorMessage\":\"OK\", \"Name\":\"Jim Schrempp\", \"Member Number\":8765, \"Card Status\":\"revoked\", \"Dues\":\"current\", \"Checkin\":\"not OK\"}";
+    String somethingWrong = "{\"ErrorCode\":3, \"ErrorMessage\":\"member not found\", \"Name\":\"not found\", \"Member Number\":0, \"Card Status\":\"bad card\", \"Dues\":\"invalid\", \"Checkin\":\"not OK\"}";
     
     static int state = 0;
     static int resultCode = 2;  // initialize for good data
@@ -285,15 +287,15 @@ int identifyCard(String dummy) {
             switch(resultCode)  {   // send back different results for testing
                 case 2: // query complete; card owner data is in the string memberInformation
                     if(lastData == 0) {
-                        cardInfo = cardBob;
+                        identifyCardResult = cardBob;
                         lastData = 1;
                     }
                     else if(lastData == 1) {
-                        cardInfo = cardJim;
+                        identifyCardResult = cardJim;
                         lastData = 2;                   
                     }
                     else {
-                        cardInfo = somethingWrong;
+                        identifyCardResult = somethingWrong;
                         lastData = 0;
                     }
                     
@@ -301,20 +303,15 @@ int identifyCard(String dummy) {
                     state = 0;
                     return 2;
                     
-                case 3: // card is factory fresh (blank)
-                    cardInfo = "";
-                    resultCode = 4; // Sset the next result type
+                case 3: // unknown error
+                    identifyCardResult = "";
+                    resultCode = 2; // Sset the next result type
                     state = 0;
                     return 3;
                     
-                case 4: // card not identified; card format unknown.
-                    cardInfo = somethingWrong;
-                    resultCode = 2;  // Sset the next result type
-                    state = 0;
-                    return 4;
                     
                 default:    // should never get here
-                    cardInfo = "";
+                    identifyCardResult = "";
                     resultCode = 2;  // Sset the next result type
                     state = 0;
                     return 4;               
