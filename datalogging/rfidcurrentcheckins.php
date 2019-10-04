@@ -5,6 +5,8 @@
 // Creative Commons: Attribution/Share Alike/Non Commercial (cc) 2019 Maker Nexus
 // By Jim Schrempp
 
+include 'commonfunctions.php';
+
 // get the HTML skeleton
 $myfile = fopen("rfidcurrentcheckinshtml.txt", "r") or die("Unable to open file!");
 $html = fread($myfile,filesize("rfidcurrentcheckinshtml.txt"));
@@ -66,12 +68,6 @@ return;
 
 function makeImageURL($data) {
 	return "<img class='IDPhoto' alt='no photo' src='https://c226212.ssl.cf0.rackcdn.com/" . $data . ".jpg'>";
-}
-function makeTR($data) {
-	return "<tr>" . $data . "</tr>";
-}
-function makeTD($data) {
-	return "<td>" . $data . "</td>";
 }
 function makeDiv($name, $clientID) {
 	return "<div class='photodiv' >" . makeImageURL($clientID) . "<p class='photoname'>" . $name . "</div>";

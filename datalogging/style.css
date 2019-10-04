@@ -16,6 +16,7 @@ table.rawlogtable {
 .photodiv {
 	float: left;
 	width: 220px;
+	height: 220px;
 	text-align: center;
 	border: 1px solid black;
 	padding: 10px 10px 10px 10px;

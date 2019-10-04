@@ -5,6 +5,8 @@
 // Creative Commons: Attribution/Share Alike/Non Commercial (cc) 2019 Maker Nexus
 // By Jim Schrempp
 
+include 'commonfunctions.php';
+
 // get the HTML skeleton
 $myfile = fopen("rfidclientactivity.txt", "r") or die("Unable to open file!");
 $html = fread($myfile,filesize("rfidclientactivity.txt"));
@@ -45,10 +47,10 @@ if (mysqli_num_rows($result) > 0) {
                  $row["recNum"], 
                  $row["dateEventLocal"],
                  $row["eventName"],
-                 $row["coreID"],
+                 rightWEllipsis($row["coreID"], 8),
                  $row["deviceFunction"],
                  $row["logEvent"],
-                 $row["clientID"],
+                 rightWEllipsis($row["clientID"],5),
                  $row["firstName"],
                  $row["logData"]
                  )     
@@ -64,8 +66,21 @@ if (mysqli_num_rows($result) > 0) {
     	$tableRows = $tableRows . $thisTableRow;
     }
     
-    $html = str_replace("<<TABLEHEADER>>","<tr><td>recNum</td><td>dateEventLocal</td><td>eventName</td><td>coreID</td>
-	<td>deviceFunction</td><td>logEvent</td><td>clientID</td><td>firstName</td><td>logData</td></tr>",$html);
+    $html = str_replace("<<TABLEHEADER>>",
+    	makeTR(
+    		array( 
+    			"Rec Num",
+    			"Date Event Local",
+    			"EventName",
+    			"Core ID",
+    			"Device Function",
+    			"Log Event",
+    			"Client ID",
+    			"First Name",
+    			"Log Data"
+    			)
+    		),
+    	$html);
     $html = str_replace("<<TABLEROWS>>", $tableRows,$html);
 
 	echo $html;
@@ -78,14 +93,6 @@ mysqli_close($con);
 
 return;
 
-function makeTR($data) {
-	$rtn = "";
-	foreach ($data as $item) {
-		$rtn = $rtn . makeTD($item);
-	}  
 
-	return "<tr>" . $rtn . "</tr>";
-}
-function makeTD($data) {
-	return "<td>" . $data . "</td>";
-}
+
+?>
