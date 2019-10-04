@@ -148,13 +148,19 @@
  *      1.082 fixed bug in cloudIdentifyCard 
  *            added some db logging
  *            added custom messages to readCard function
+ *      1.083 fixed bug in dblogging of allowInMessage
+ *            move nfc.printhex inside of TEST ifdefs, no need to print if we're not in TEST mode
 ************************************************************************/
-#define MN_FIRMWARE_VERSION 1.082
+#define MN_FIRMWARE_VERSION 1.083
 
 
 //#define TEST     // uncomment for debugging mode
 #define RFID_READER_PRESENT  // uncomment when an RFID reader is connected
 #define LCD_PRESENT  // uncomment when an LCD display is connected
+
+// Our RFID card encryption keys
+#include "rfidkeys.h"
+
 
 //Required to get ArduinoJson to compile
 #define ARDUINOJSON_ENABLE_PROGMEM 0
@@ -2456,7 +2462,9 @@ void setup() {
     unsigned long processStartMilliseconds = millis();
 
 // xxx responseRFIDKeys debugging since we are not getting called back from the webhook for some reason...
-    responseRFIDKeys("junk", "{\"WriteKey\":[160,161,162,163,164,165],\"ReadKey\":[176,177,178,179,180,181] }");
+    //RFIDKeysJSON from include file
+    //responseRFIDKeys("junk", "{\"WriteKey\":[160,161,162,163,164,165],\"ReadKey\":[176,177,178,179,180,181] }");
+    responseRFIDKeys("junk", RFIDKeysJSON);
 
     while (!g_secretKeysValid) {
         Particle.process();
