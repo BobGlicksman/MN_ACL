@@ -150,8 +150,10 @@
  *            added custom messages to readCard function
  *      1.083 fixed bug in dblogging of allowInMessage
  *            move nfc.printhex inside of TEST ifdefs, no need to print if we're not in TEST mode
+ *      1.084 moved RFID keys to include file
+ *            identify card now detects previous MN format
 ************************************************************************/
-#define MN_FIRMWARE_VERSION 1.083
+#define MN_FIRMWARE_VERSION 1.084
 
 
 //#define TEST     // uncomment for debugging mode
@@ -197,6 +199,8 @@ uint8_t TESTKEYA[6] = { 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5 };
 uint8_t TESTKEYB[6] = { 0xB0, 0xB1, 0xB2, 0xB3, 0xB4, 0xB5 };
 uint8_t g_secretKeyA[6] = {0,0,0,0,0,0}; 
 uint8_t g_secretKeyB[6] = {0,0,0,0,0,0};  
+uint8_t g_secretKeyA_OLD[6] = {0,0,0,0,0,0}; 
+uint8_t g_secretKeyB_OLD[6] = {0,0,0,0,0,0};  
 bool g_secretKeysValid = false;
 
 
@@ -244,7 +248,9 @@ String g_cibmnResponseBuffer = "";
 String g_cibcidResponseBuffer = "";
 String g_packagesResponseBuffer = "";
 String g_queryMemberResult = ""; // JSON formatted name:value pairs.  ClientName, ClientID. Admin app will display all values.
-                                 // Will also contain errorCode which app should check to be 0. See function queryMember.
+                                 // Will also contain errorCode which app should check to be 0. See function cloudQueryMember.
+String g_identifyCardResult = ""; // JSON formatted name:value pairs. ClientName, ClientID. Admin app will display all values.
+                                 // Will also contain errorCode which app should check to be 0. See function cloudIdentifyCard.
 String JSONParseError = "";
 String g_recentErrors = "";
 String debug2 = "";
@@ -273,6 +279,7 @@ struct EEPROMdata {
 struct struct_cardData {
     int clientID = 0;
     String UID = "";
+    String cardStatus = "";
     bool isValid = false;
 } g_cardData;
 
@@ -640,8 +647,8 @@ void ezfReceiveCheckInToken (const char *event, const char *data)  {
 void responseRFIDKeys(const char *event, const char *data) {
 
     g_secretKeysValid = false;
-    const int capacity = JSON_ARRAY_SIZE(6) + JSON_OBJECT_SIZE(1) + 10;
-    StaticJsonDocument<400> docJSON;
+    //const int capacity = JSON_ARRAY_SIZE(8) + JSON_OBJECT_SIZE(1) + 10;
+    StaticJsonDocument<800> docJSON;
 
     // will it parse?
     DeserializationError err = deserializeJson(docJSON, data ); // XXX
@@ -650,9 +657,13 @@ void responseRFIDKeys(const char *event, const char *data) {
         //We have valid JSON, get the key
         JsonArray WriteKey = docJSON["WriteKey"];
         JsonArray ReadKey = docJSON["ReadKey"];
+        JsonArray WriteKeyOld = docJSON["WriteKeyOld"];
+        JsonArray ReadKeyOld = docJSON["ReadKeyOld"];
         for (int i=0;i<6;i++) {
             g_secretKeyA[i] = WriteKey[i];
             g_secretKeyB[i] = ReadKey[i];
+            g_secretKeyA_OLD[i] = WriteKeyOld[i];
+            g_secretKeyB_OLD[i] = ReadKeyOld[i];
             g_secretKeysValid = true;
         }
             
@@ -660,7 +671,7 @@ void responseRFIDKeys(const char *event, const char *data) {
         buzzerGoodBeep();
        
     } else {
-        writeToLCD("KEY error",JSONParseError);
+        writeToLCD("JSON KEY error",JSONParseError);
         buzzerBadBeep();
         delay(5000);
     }
@@ -684,31 +695,34 @@ void clearClientInfo() {
 
 
 // format g_clientInfo into JSON 
-String clientInfoToJSON(int errCode, String errMsg){
+String clientInfoToJSON(int errCode, String errMsg, bool includeCardData){
 
-        const size_t capacity = JSON_OBJECT_SIZE(10);
-        DynamicJsonDocument doc(capacity);
+    const size_t capacity = JSON_OBJECT_SIZE(10);
+    DynamicJsonDocument doc(capacity);
 
-        doc["ErrorCode"] = errCode;
-        doc["ErrorMessage"] = errMsg.c_str();
-        String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
-        doc["Name"] = fullName.c_str();
-        doc["ClientID"] = g_clientInfo.clientID;
-        doc["Status"] = g_clientInfo.contractStatus.c_str();
+    doc["ErrorCode"] = errCode;
+    doc["ErrorMessage"] = errMsg.c_str();
+    String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
+    doc["Name"] = fullName.c_str();
+    doc["ClientID"] = g_clientInfo.clientID;
+    doc["Status"] = g_clientInfo.contractStatus.c_str();
 
+    if (includeCardData) {
         if (g_cardData.isValid) {
             String allowCheckin = isClientOkToCheckIn();
             if (allowCheckin.length() == 0){
                 doc["Checkin"] = "Allowed";
             } else {
-               doc["Checkin"] = allowCheckin.c_str();
+                doc["Checkin"] = allowCheckin.c_str();
             }
+            doc["cardStatus"] = g_cardData.cardStatus.c_str();
         }
+    }
 
-        char JSON[1000];
-        serializeJson(doc,JSON );
-        String rtnValue = String(JSON);
-        return rtnValue;
+    char JSON[1000];
+    serializeJson(doc,JSON );
+    String rtnValue = String(JSON);
+    return rtnValue;
 
 }
 
@@ -1105,6 +1119,7 @@ void clearCardData() {
     g_cardData.isValid = false;
     g_cardData.clientID = 0;
     g_cardData.UID = "";
+    g_cardData.cardStatus = "";
 }
 
 /**************************************************************************************
@@ -1450,6 +1465,7 @@ uint8_t authenticateBlock(int blockNum, uint8_t keyNum, uint8_t *key) {
  *  0 means factory fresh card
  *  1 means MN formatted card
  *  2 means neither type (sector most likely unusable)
+ *  3 means card formatted with previous MN keys
 ****************************************************************************************************/
 uint8_t testCard() {
     bool success = false;
@@ -1479,12 +1495,25 @@ uint8_t testCard() {
             #endif
             
             return 1;   // code for MN formatted card
-        } else {    // neither test passed - card type is unknown
-            #ifdef TEST
-                Serial.println("Not an MN formatted card - card type unknown ...");
-            #endif
+
+        } else { // not factory fresh or current MN keys 
+            // reset by reading the target ID again
+            nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength);
+            success = authenticateBlock(2, 0, g_secretKeyA_OLD);        
+            if(success == true) {   // we can assume an MN formatted card
+                #ifdef TEST
+                    Serial.println("MN secret key A old authenticated.  Assume old NM formatted card ...");
+                #endif
             
-            return 2;   // code for unknown card format
+                return 3;   // code for MN formatted card
+
+            } else { // no test passed - card type is unknown
+                #ifdef TEST
+                    Serial.println("Not an MN formatted card - card type unknown ...");
+                #endif
+            
+                return 2;   // code for unknown card format
+            }
         }
     }
 }   // end of testCard()
@@ -1538,30 +1567,22 @@ eRetStatus readTheCard(String msg1, String msg2) {
     // test the card to determine its type
     uint8_t cardType = testCard();
 
-    Serial.print("\n\nCard is type ");
-    if(cardType == 0) {
-        Serial.println("factory fresh\n");
-        logToDB("CardNotMNType","",0);
+    switch (cardType) {
+    case 0:
+        // do nothing factory fresh card
+        g_cardData.cardStatus = "Factory Fresh Card";
+        g_cardData.isValid = true;
+        returnStatus = COMPLETE_FAIL;
+        Serial.println("\n\nCard is type factory fresh\n");
+        logToDB("CardTypeFactoryFresh","",0);
         writeToLCD("Card is not MN","(fresh format)");
         buzzerBadBeep();
         delay(1000);
-    } else if (cardType == 1) {
-        Serial.println("Maker Nexus formatted\n");        
-    } else {
-        Serial.println("other card format\n");
-        logToDB("CardUnknownType","",0);
-        writeToLCD("Card is not MN","(unknown card)");
-        buzzerBadBeep();
-        delay(1000);
-    }
-
-    if(cardType == 0) { // factory fresh card
-
-        // do nothing factory fresh card
-  
-        returnStatus = COMPLETE_FAIL;
-
-    } else  {  // MN formatted card
+        break;
+    
+    case 1: {
+        // MN formatted card
+        Serial.println("\n\nCard is type Maker Nexus formatted\n");
 
         // now read the data using MN Key and store in g_cardData
         readBlockData(dataBlock, 0,  0, g_secretKeyA);
@@ -1594,6 +1615,7 @@ eRetStatus readTheCard(String msg1, String msg2) {
 
         g_cardData.clientID = theClientID.toInt();
         g_cardData.UID = theUID;
+        g_cardData.cardStatus = "MN Format Card";
         g_cardData.isValid = true;
         
         // display the status to the user
@@ -1614,8 +1636,33 @@ eRetStatus readTheCard(String msg1, String msg2) {
         Serial.println(msg);
         Serial.println("");  
         //delay(1000);
+        break;
+        }
 
+    case 3:
+        // old format of MN card
+        g_cardData.cardStatus = "MN Old Format Card";
+        g_cardData.isValid = true;
+        returnStatus = COMPLETE_FAIL;
+        Serial.println("\n\nCard is type Maker Nexus old formatted\n");
+        logToDB("CardTypeOldMN","",0);
+        writeToLCD("Card is old MN"," ");
+        buzzerBadBeep();
+        delay(1000);
+        break;
+
+    default:
+        g_cardData.cardStatus = "Cannot Read Card";
+        g_cardData.isValid = true;
+        returnStatus = COMPLETE_FAIL;
+        Serial.println("\n\nCard is type other card format\n");
+        logToDB("CardTypeUnknown","",0);
+        writeToLCD("Card is not MN","(unknown format)");
+        buzzerBadBeep();
+        delay(1000);
+        break;
     }
+
     
     if (nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
         // card is on the reader, put up a message
@@ -1744,12 +1791,12 @@ int cloudBurnCard(String data){
     int clientID = data.toInt();
     if (clientID == 0) {
         // bad client ID 
-        return 3;
+        return 2;
     }
 
     if (g_clientInfo.clientID != clientID) {
         // this is not the clientID data we have
-        return 2;
+        return 1;
     }
 
     g_adminCommand = acBURNCARDNOW; // Admin loop will pick this up and burn the card
@@ -2057,6 +2104,11 @@ enum idcState {
 
                 idcState = idcWAITFORTOKEN;
                 digitalWrite(READY_LED,LOW);
+
+            } else if (retStatus == COMPLETE_FAIL) {
+                writeToLCD("Card read fail",g_cardData.cardStatus);
+                g_identifyCardResult = clientInfoToJSON(1,"Card read failed",true);
+                idcState = idcCLEANUP;
             }
         }
         break;
@@ -2102,7 +2154,7 @@ enum idcState {
 
     case idcFORMATINFO: {
 
-        g_queryMemberResult = clientInfoToJSON(0,"OK");
+        g_identifyCardResult = clientInfoToJSON(0,"OK", true);
 
         String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
         writeToLCD("Card is for",fullName.substring(0,15));
@@ -2225,7 +2277,7 @@ void adminGetUserInfo(int clientID, String memberNumber) {
 
     case guiFORMATINFO: {
 
-        g_queryMemberResult = clientInfoToJSON(0, "OK");
+        g_queryMemberResult = clientInfoToJSON(0, "OK", false);
 
         String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
         writeToLCD("Selected",fullName.substring(0,15));
@@ -2292,10 +2344,11 @@ void loopAdmin() {
         adminIdentifyCard();
         break;
 
-    case acBURNCARDNOW:
+    case acBURNCARDNOW: {
         LCDSaysIdle = false;
         burnCardNow(g_clientInfo.clientID, g_clientInfo.RFIDCardKey);
         break;
+    }
 
     default:
         break;
@@ -2438,7 +2491,7 @@ void setup() {
     Particle.variable("queryMemberResult",g_queryMemberResult);
     Particle.function("burnCard",cloudBurnCard);
     Particle.function("identifyCard",cloudIdentifyCard);
-    Particle.variable("cardInfo",g_queryMemberResult); // xxx should be queryCardInfoResult
+    Particle.variable("identifyCardResult",g_identifyCardResult); // xxx should be queryCardInfoResult
 
     logToDB("restart","",0);
 
@@ -2458,7 +2511,7 @@ void setup() {
     // Get the RFID secret keys 
     writeToLCD("Requesting RFID", "Keys");
     g_secretKeysValid = false;
-    Particle.publish("RFIDKeys", "junk1", PRIVATE);
+    //Particle.publish("RFIDKeys", "junk1", PRIVATE);
     unsigned long processStartMilliseconds = millis();
 
 // xxx responseRFIDKeys debugging since we are not getting called back from the webhook for some reason...
