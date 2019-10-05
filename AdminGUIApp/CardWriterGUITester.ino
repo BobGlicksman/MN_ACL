@@ -7,11 +7,11 @@
  * administration.
  * 
  * (c) 2019, Team Practical Projects, Bob Glicksman, Jim Schrempp
- * version 1.5; by: Bob Glicksman; 10/04/19
+ * version 1.6; by: Bob Glicksman; 10/05/19
  * *****************************************************************************************/
 
 // Global variables
-String deviceInfo = "Firmware version 1.5. Last reset @ ";
+String deviceInfo = "Firmware version 1.6. Last reset @ ";
 String memberData = "";
 String identifyCardResult = "";
 
@@ -83,7 +83,7 @@ int queryMember(String memberNumber)
         Name : Bob Glicksman
 	    ClientID : 12345678
     	Status : Active
-    	Dues: not current
+    	Checkin: Allowed (or another message that would be displayed if a checkin is attempted)
 
     Where ErrorCode is 
 	    0 = member found and membership data is in the JSON.
@@ -96,9 +96,9 @@ int queryMember(String memberNumber)
 ************************************************************/
 int queryMember(String memberNumber) {
     // define some member data
-    String memberBob = "{\"ErrorCode\":0, \"ErrorMessage\":\"OK\", \"Name\":\"Bob Glicksman\", \"ClientID\":12345678, \"Status\":\"deadbeat\", \"Dues\":\"not current\"}";
-    String memberJim = "{\"ErrorCode\":0, \"ErrorMessage\":\"OK\", \"Name\":\"Jim Schrempp\", \"ClientID\":98765432, \"Status\":\"active\", \"Dues\":\"current\"}";
-    String somethingWrong = "{\"ErrorCode\":1, \"ErrorMessage\":\"member not found\", \"Name\":\"not found\", \"ClientID\":0, \"Status\":\"none\", \"Dues\":\"not valid\"}";
+    String memberBob = "{\"ErrorCode\":0, \"ErrorMessage\":\"OK\", \"Name\":\"Bob Glicksman\", \"ClientID\":12345678, \"Status\":\"deadbeat\", \"Checkin\":\"dues owed\"}";
+    String memberJim = "{\"ErrorCode\":0, \"ErrorMessage\":\"OK\", \"Name\":\"Jim Schrempp\", \"ClientID\":98765432, \"Status\":\"active\", \"Checkin\":\"OK\"}";
+    String somethingWrong = "{\"ErrorCode\":1, \"ErrorMessage\":\"member not found\", \"Name\":\"not found\", \"ClientID\":0, \"Status\":\"none\", \"Checkin\":\"not valid\"}";
     
     static int state = 0;
     static int resultCode = 2;  // initialize for good data
@@ -208,6 +208,7 @@ int resetCard(String dummy)
 
     0 = function called; follow instructions on the LCD panel
 	1 = failure to contact the card reader/writer hardware
+	2 + device is busy with other operation
 
 ************************************************************/
 int resetCard(String dummy) {
@@ -215,12 +216,15 @@ int resetCard(String dummy) {
 
     Particle.publish("reset card ", "called", PRIVATE);
     
-    switch(errorCode++ % 2) {
-        case 0: // card reset successfully
+    switch(errorCode++ % 3) {
+        case 0: // function called; follow instructions on the LCD panel
             return 0;
             
-        case 1: // card is already factory fresh
+        case 1: // failure to contact the card reader/writer hardware
             return 1;
+            
+        case 2: // device is busy with other operation
+            return 2;    
          
          default:   // should never get here
             return 1;
@@ -255,16 +259,15 @@ int identifyCard(String dummy)
         Name : Bob Glicksman
         Member Number :  7654
 	    Card Status :  Current (alternative: Revoked)
-	    Dues: current (or not current)
-	    Checkin: OK (or not OK)
+	    Checkin: OK (or other message)
 
 
 **********************************************************************/
 int identifyCard(String dummy) {
     // define some member data
-    String cardBob = "{\"ErrorCode\":0, \"ErrorMessage\":\"OK\", \"Name\":\"Bob Glicksman\", \"Member Number\":1234, \"Card Status\":\"current\", \"Dues\":\"not current\", \"Checkin\":\"OK\"}";
-    String cardJim = "{\"ErrorCode\":0, \"ErrorMessage\":\"OK\", \"Name\":\"Jim Schrempp\", \"Member Number\":8765, \"Card Status\":\"revoked\", \"Dues\":\"current\", \"Checkin\":\"not OK\"}";
-    String somethingWrong = "{\"ErrorCode\":3, \"ErrorMessage\":\"member not found\", \"Name\":\"not found\", \"Member Number\":0, \"Card Status\":\"bad card\", \"Dues\":\"invalid\", \"Checkin\":\"not OK\"}";
+    String cardBob = "{\"ErrorCode\":0, \"ErrorMessage\":\"OK\", \"Name\":\"Bob Glicksman\", \"Member Number\":1234, \"Card Status\":\"current\", \"Checkin\":\"OK\"}";
+    String cardJim = "{\"ErrorCode\":0, \"ErrorMessage\":\"OK\", \"Name\":\"Jim Schrempp\", \"Member Number\":8765, \"Card Status\":\"revoked\", \"Checkin\":\"not OK\"}";
+    String somethingWrong = "{\"ErrorCode\":3, \"ErrorMessage\":\"member not found\", \"Name\":\"not found\", \"Member Number\":0, \"Card Status\":\"bad card\", \"Checkin\":\"invalid\"}";
     
     static int state = 0;
     static int resultCode = 2;  // initialize for good data
