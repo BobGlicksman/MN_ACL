@@ -314,7 +314,8 @@ enum eAdminCommand {
     acIDLE = 1,
     acGETUSERINFO = 2,
     acIDENTIFYCARD = 3,
-    acBURNCARDNOW = 4
+    acBURNCARDNOW = 4,
+    acRESETCARDTOFRESH = 5
 };
 eAdminCommand g_adminCommand = acIDLE;
 String g_adminCommandData = "";
@@ -1076,15 +1077,8 @@ String isClientOkToCheckIn (){
         }
     }
 
-    if ( (g_clientInfo.contractStatus.indexOf("Active") == 0) && (g_clientInfo.amountDue == 0) ) {
-        // active contract, no money due
-        return "";
-    }
-
-    if ( (g_clientInfo.contractStatus.indexOf("Pending") == 0) && (g_clientInfo.amountDue < 151) ) {
-        // pending contract, must be in renewal window.
-        // one month or less payment due (contracts that cost less than 150 will 
-        // avoid this rejection for several months)
+    if ( (g_clientInfo.contractStatus.indexOf("Active") == 0) && (g_clientInfo.amountDue < 151) ) {
+        // active contract, less than one month's money due 
         return "";
     }
 
@@ -1098,11 +1092,11 @@ String isClientOkToCheckIn (){
 
     } else if (g_clientInfo.amountDue > 0) {  
 
-        allowInMessage = "Billing Issue " + g_clientInfo.amountDue; 
+        allowInMessage = "Billing Issue"; // they owe more than $151
     
     } else {
 
-        allowInMessage = "CStatus: " + g_clientInfo.contractStatus; // Frozen, suspended, etc 
+        allowInMessage = "C: " + g_clientInfo.contractStatus; // Frozen, suspended, etc 
 
     }
 
@@ -1776,6 +1770,22 @@ int cloudIdentifyCard (String data) {
     }
 };
 
+// ----------------------- cloudResetCardToFresh ------------------------
+// cloudResetCardToFresh - cloud function
+//     data is ignored
+// returns:
+//  	0 = ready, follow instructions on LCD
+//	    1 = error contacting the hardwarebad card
+//      2 = device busy with other operation
+int cloudResetCardToFresh(String data) {
+    if (g_adminCommand != acIDLE) {
+        return 2;
+    }
+    g_adminCommand = acRESETCARDTOFRESH;
+    return 0;
+
+}
+
 // ----------------------- cloudBurnCard ------------------------
 // cloudBurnCard - cloud function
 //     data is the string representation of the clientID for this card
@@ -1803,6 +1813,96 @@ int cloudBurnCard(String data){
     return 0;
 
 }
+
+// If the card can be read with the current or old MN card, reset it to factory fresh format
+void resetCardToFreshNow() {
+
+    Serial.println("waiting for ISO14443A card to be presented to the reader ...");
+    
+    writeToLCD("Place card on","reader to RESET");
+
+    unsigned long processStartMilliseconds = millis();
+    while(!nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
+        // JUST WAIT FOR A CARD
+        if (millis() - processStartMilliseconds > 15000) {
+            writeToLCD ("Tired of waiting", " ");
+            delay(500);
+            buzzerGoodBeep();
+            g_adminCommand = acIDLE;
+            g_adminCommandData = "";
+            return;
+        }
+    }
+    
+    // test the card to determine its type
+    uint8_t cardType = testCard();
+    debugEvent("card is type " + cardType);
+    Serial.print("\n\nCard is type ");
+
+    uint8_t thisCardWriteKey[6];
+    switch (cardType) {
+    case 0:
+        Serial.println("already factory fresh\n");
+        writeToLCD ("Already reset","remove card");
+        delay (1000);
+        g_adminCommand = acIDLE;
+        g_adminCommandData = "";
+        return;
+        break;
+
+    case 1:
+        //mn format 
+        for (int i=0; i<6; i++){
+            thisCardWriteKey[i] = g_secretKeyB[i];
+        }
+        break;
+
+    case 3:
+        // mn old format
+        for (int i=0; i<6; i++){
+            thisCardWriteKey[i] = g_secretKeyB_OLD[i];
+        }
+        break;
+
+    case 2:
+    default:
+        // unknown format         
+        Serial.println("unknown format\n");
+        writeToLCD ("Unknown format","can not reset");
+        delay(1000);
+        g_adminCommand = acIDLE;
+        g_adminCommandData = "";
+        return;
+        break;       
+    }
+
+    // Get here to reset the card
+
+    // change the keys to make this an MN card
+    bool cardIsReady = changeKeys(1, thisCardWriteKey, DEFAULT_KEY_A, DEFAULT_KEY_B, DEFAULT_ACB);
+    if (cardIsReady) {
+        Serial.println("\nMade fresh card to MN card OK\n");
+        writeToLCD("Card is fresh","now");
+        buzzerGoodBeeps2();
+    } else {
+        writeToLCD("Failed change", "to MN type");
+        buzzerBadBeep();
+    }
+    delay(1000);
+    clearClientInfo();
+    clearCardData();
+    writeToLCD("Card Done","remove card");
+
+    while(nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
+        // wait for card to be removed
+    }
+
+    g_adminCommand = acIDLE;
+    g_adminCommandData = "";
+    return;
+
+}
+
 
 void burnCardNow(int clientID, String cardUID) {
     // burn baby burn!
@@ -2348,6 +2448,11 @@ void loopAdmin() {
         LCDSaysIdle = false;
         burnCardNow(g_clientInfo.clientID, g_clientInfo.RFIDCardKey);
         break;
+
+    case acRESETCARDTOFRESH: {
+        LCDSaysIdle = false;
+        resetCardToFreshNow();
+    }
     }
 
     default:
@@ -2490,6 +2595,7 @@ void setup() {
     Particle.function("queryMember",cloudQueryMember);
     Particle.variable("queryMemberResult",g_queryMemberResult);
     Particle.function("burnCard",cloudBurnCard);
+    Particle.function("resetCard",cloudResetCardToFresh);
     Particle.function("identifyCard",cloudIdentifyCard);
     Particle.variable("identifyCardResult",g_identifyCardResult); // xxx should be queryCardInfoResult
 
