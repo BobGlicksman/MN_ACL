@@ -5,6 +5,8 @@
 // Creative Commons: Attribution/Share Alike/Non Commercial (cc) 2019 Maker Nexus
 // By Jim Schrempp
 
+include 'commonfunctions.php';
+
 // get the HTML skeleton
 $myfile = fopen("rfidtop100html.txt", "r") or die("Unable to open file!");
 $html = fread($myfile,filesize("rfidtop100html.txt"));
@@ -37,22 +39,37 @@ if (mysqli_num_rows($result) > 0) {
     while($row = mysqli_fetch_assoc($result)) {
     	
         $thisTableRow = makeTR( 
-          makeTD($row["recNum"]) 
-        . makeTD($row["dateEventLocal"])
-        . makeTD($row["eventName"])
-        . makeTD($row["coreID"])
-        . makeTD($row["deviceFunction"])
-        . makeTD($row["logEvent"])
-        . makeTD($row["clientID"])
-        . makeTD($row["firstName"])
-        . makeTD($row["logData"])
+        	array ( 
+         		$row["recNum"], 
+         		$row["dateEventLocal"],
+        		$row["eventName"],
+        		$row["coreID"],
+        		$row["deviceFunction"],
+        		$row["logEvent"],
+        		$row["clientID"],
+        		$row["firstName"],
+        		$row["logData"]
+        	)
     	);
     	
     	$tableRows = $tableRows . $thisTableRow;
     }
     
-    $html = str_replace("<<TABLEHEADER>>","<tr><td>recNum</td><td>dateEventLocal</td><td>eventName</td><td>coreID</td>
-	<td>deviceFunction</td><td>logEvent</td><td>clientID</td><td>firstName</td><td>logData</td></tr>",$html);
+    $html = str_replace("<<TABLEHEADER>>",
+    	makeTR(
+    		array( 
+    			"Rec Num",
+    			"Date Event Local",
+    			"EventName",
+    			"Core ID",
+    			"Device Function",
+    			"Log Event",
+    			"Client ID",
+    			"First Name",
+    			"Log Data"
+    			)
+    		),
+    	$html);    
     $html = str_replace("<<TABLEROWS>>", $tableRows,$html);
 
 	echo $html;
@@ -64,10 +81,4 @@ if (mysqli_num_rows($result) > 0) {
 mysqli_close($con);
 
 return;
-
-function makeTR($data) {
-	return "<tr>" . $data . "</tr>";
-}
-function makeTD($data) {
-	return "<td>" . $data . "</td>";
-}
+?>
