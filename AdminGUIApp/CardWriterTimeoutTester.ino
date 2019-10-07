@@ -1,17 +1,20 @@
 /******************************************************************************************
- * CardWriterGUITester:  program to test the AI2 GUI App.
+ * CardWriterTimeoutTester:  program to test the AI2 GUI App. timeout function
  * 
  * This program contains cloud functions and cloud variables used to test out the MN 
  * Card Writer GUI App.  The Card Writer GUI App is an MIT App Inventor 2 App
  * that provides the MN administrator with a user interface for RFID card
  * administration.
  * 
+ * THIS PROGRAM IS DUMMIED UP TO KEEP RETURNING "IN PROCESS" STATE (1) FOR TESTING OF
+ * THE MAX-RETIRES FUNCTIONALITY OF THE APP.
+ * 
  * (c) 2019, Team Practical Projects, Bob Glicksman, Jim Schrempp
- * version 1.6; by: Bob Glicksman; 10/05/19
+ * version 1.0; by: Bob Glicksman; 10/06/19
  * *****************************************************************************************/
 
 // Global variables
-String deviceInfo = "Firmware version 1.6. Last reset @ ";
+String deviceInfo = "Firmware version 1.0. Last reset @ ";
 String memberData = "";
 String identifyCardResult = "";
 
@@ -92,6 +95,8 @@ int queryMember(String memberNumber)
 	    3 = other error.
 
     ErrorMessage is a short string in English, suitable for display to a user.
+    
+    DUMMIED UP TO KEEP SENDING BACK RESULT OF 1
 
 ************************************************************/
 int queryMember(String memberNumber) {
@@ -103,6 +108,8 @@ int queryMember(String memberNumber) {
     static int state = 0;
     static int resultCode = 2;  // initialize for good data
     static int lastData = 0;   // toggle between results
+    
+    static int numTries = 0;    // to publish the number of tries to the Console
 
     Particle.publish("received member number = ", memberNumber, PRIVATE);
     
@@ -112,7 +119,9 @@ int queryMember(String memberNumber) {
             return 0;
         
         case 1: // waiting for a response to the query
-            state = 2;  // next time, there will be a response
+            state = 1;  // next time, there will be a response
+            if(numTries++ >= 32) numTries = 0;    // go a little beyond 30 before resetting
+            Particle.publish("tries = ", String(numTries), PRIVATE);
             return 1;
         
         case 2: // query has completed, for good or bad
@@ -261,6 +270,7 @@ int identifyCard(String dummy)
 	    Card Status :  Current (alternative: Revoked)
 	    Checkin: OK (or other message)
 
+        DUMMIED UP TO KEEP SENDING BACK RESULT OF 1
 
 **********************************************************************/
 int identifyCard(String dummy) {
@@ -272,6 +282,8 @@ int identifyCard(String dummy) {
     static int state = 0;
     static int resultCode = 2;  // initialize for good data
     static int lastData = 0;   // toggle between results
+    
+    static int numTries = 0;    // to publish the number of tries to the Console
 
     Particle.publish("identifyCard ", "called", PRIVATE);
     
@@ -281,7 +293,9 @@ int identifyCard(String dummy) {
             return 0;
         
         case 1: // waiting for a response to the query
-            state = 2;  // next time, there will be a response
+            state = 1;  // next time, there will be a response
+            if(numTries++ >= 32) numTries = 0;    // go a little beyond 30 before resetting
+            Particle.publish("tries = ", String(numTries), PRIVATE);
             return 1;
         
         case 2: // query has completed, for good or bad
