@@ -702,7 +702,7 @@ void clearClientInfo() {
 // format g_clientInfo into JSON 
 String clientInfoToJSON(int errCode, String errMsg, bool includeCardData){
 
-    const size_t capacity = JSON_OBJECT_SIZE(10);
+    const size_t capacity = JSON_OBJECT_SIZE(15);
     DynamicJsonDocument doc(capacity);
 
     doc["ErrorCode"] = errCode;
@@ -722,12 +722,13 @@ String clientInfoToJSON(int errCode, String errMsg, bool includeCardData){
 
     if (includeCardData) {
         if (g_cardData.isValid) {
-            
-            doc["Card Status"] = g_cardData.cardStatus.c_str();
+            String msg1 = isCardUIDValid();
+            String msg2 = g_cardData.cardStatus + " " + msg1; 
+            doc["Card Status"] = msg2.c_str();
         }
     }
 
-    char JSON[1000];
+    char JSON[1200];
     serializeJson(doc,JSON );
     String rtnValue = String(JSON);
     return rtnValue;
@@ -1052,22 +1053,18 @@ int cloudRFIDCardRead (String data) {
     return 0;
 }
 
-// ------------ isClientOkToCheckIn --------------
-//  This routine is where we check to see if we should allow
-//  the client to check in or if we should deny them. This
-//  routine will use g_clientInfo and g_cardData to make the determination.
-//    
-//  Returns "" if client is good and a 16 or less character message
-//      if not. Message suitable for display to user.
-//
-String isClientOkToCheckIn (){
+// ------------ isCardUIDValid -------------------
+// This routine tests if the card UID matches the value from the CRM
+// these are stored in g_cardData and g_clientInfo
+// 
+// Retuns "" if card UID is valid and a 16 or less character message
+//     if not. Message suitable for display to user.
+String isCardUIDValid() {
 
-    // Test for a good account status
-
-    
     if ( ( g_cardData.UID.length() == 0) && (g_clientInfo.RFIDCardKey.length() == 0 ) ) {
         // card and EZF both have null card UIDs so skip the UID Tests below 
         // we assume the card is ok 
+
     } else { 
 
         debugEvent("cardUID:" + g_cardData.UID);
@@ -1083,6 +1080,20 @@ String isClientOkToCheckIn (){
             return "Card revoked 2";
         }
     }
+    return "";
+}
+
+// ------------ isClientOkToCheckIn --------------
+//  This routine is where we check to see if we should allow
+//  the client to check in or if we should deny them. This
+//  routine will use g_clientInfo and g_cardData to make the determination.
+//    
+//  Returns "" if client is good and a 16 or less character message
+//      if not. Message suitable for display to user.
+//
+String isClientOkToCheckIn (){
+
+    // Test for a good account status
 
     if ( (g_clientInfo.contractStatus.indexOf("Active") == 0) && (g_clientInfo.amountDue < 151) ) {
         // active contract, less than one month's money due 
@@ -2115,41 +2126,61 @@ void loopCheckIn() {
     case cilCHECKINGIN: {
 
         // If the client meets all critera, check them in
-        String allowInMessage = isClientOkToCheckIn();
-        debugEvent("allowinmsg:" + allowInMessage);
 
-        if ( allowInMessage.length() > 0 ) {
-            //client account status is bad
-            writeToLCD(allowInMessage,"See Manager");
+        String cardValidMessage = isCardUIDValid();
+        debugEvent("cardValidmsg:" + cardValidMessage);
+
+        if (cardValidMessage.length() > 0) {
+            //card UID does not match CRM. 
+            writeToLCD(cardValidMessage,"See Manager");
             buzzerBadBeep();
             digitalWrite(REJECT_LED,HIGH);
             delay(2000);
             digitalWrite(REJECT_LED,LOW);
-            
+
             // log this to DB 
-            logToDB("checkin denied",allowInMessage,g_clientInfo.clientID);
+            logToDB("checkin denied",cardValidMessage,g_clientInfo.clientID);
 
             cilloopState = cilWAITFORCARD;
-            
+
         } else {
-        
-            debugEvent ("SM: now checkin client");
-            // tell EZF to check someone in
-            ezfCheckInClient(String(g_clientInfo.clientID));
+            // card UID is ok, what about account?
+            String allowInMessage = isClientOkToCheckIn();
+            debugEvent("allowinmsg:" + allowInMessage);
 
-            String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
-            writeToLCD("Welcome",fullName.substring(0,15));
-            digitalWrite(ADMIT_LED,HIGH);
-            buzzerGoodBeeps2();
-            delay(1000);
-            digitalWrite(ADMIT_LED,LOW);
+            if ( allowInMessage.length() > 0 ) {
+                //client account status is bad
+                writeToLCD(allowInMessage,"See Manager");
+                buzzerBadBeep();
+                digitalWrite(REJECT_LED,HIGH);
+                delay(2000);
+                digitalWrite(REJECT_LED,LOW);
+                
+                // log this to DB 
+                logToDB("checkin denied",allowInMessage,g_clientInfo.clientID);
+
+                cilloopState = cilWAITFORCARD;
+                
+            } else {
             
-            // log this to DB 
-            logToDB("checkin allowed","",g_clientInfo.clientID);
+                debugEvent ("SM: now checkin client");
+                // tell EZF to check someone in
+                ezfCheckInClient(String(g_clientInfo.clientID));
+
+                String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
+                writeToLCD("Welcome",fullName.substring(0,15));
+                digitalWrite(ADMIT_LED,HIGH);
+                buzzerGoodBeeps2();
+                delay(1000);
+                digitalWrite(ADMIT_LED,LOW);
+                
+                // log this to DB 
+                logToDB("checkin allowed","",g_clientInfo.clientID);
+                
+                cilloopState = cilWAITFORCARD;
             
-            cilloopState = cilWAITFORCARD;
-        
-            }
+                }
+        }
     }
     case cilERROR:
         break;
