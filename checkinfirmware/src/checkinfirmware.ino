@@ -152,6 +152,10 @@
  *            move nfc.printhex inside of TEST ifdefs, no need to print if we're not in TEST mode
  *      1.084 moved RFID keys to include file
  *            identify card now detects previous MN format
+ *            resetCard will now make an MN card "factory fresh"
+ *            fixed bug in isClientOkToCheckIn where members in the renewal week were denied
+ *            fixed bug in JSON back to android app
+ *            changed identifyCard so app gets result faster
 ************************************************************************/
 #define MN_FIRMWARE_VERSION 1.084
 
@@ -705,18 +709,21 @@ String clientInfoToJSON(int errCode, String errMsg, bool includeCardData){
     doc["ErrorMessage"] = errMsg.c_str();
     String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
     doc["Name"] = fullName.c_str();
+    doc["Member Number"] = g_clientInfo.memberNumber.c_str();
     doc["ClientID"] = g_clientInfo.clientID;
     doc["Status"] = g_clientInfo.contractStatus.c_str();
 
+    String allowCheckin = isClientOkToCheckIn();
+    if (allowCheckin.length() == 0){
+        doc["Checkin"] = "Allowed";
+    } else {
+        doc["Checkin"] = allowCheckin.c_str();
+    }
+
     if (includeCardData) {
         if (g_cardData.isValid) {
-            String allowCheckin = isClientOkToCheckIn();
-            if (allowCheckin.length() == 0){
-                doc["Checkin"] = "Allowed";
-            } else {
-                doc["Checkin"] = allowCheckin.c_str();
-            }
-            doc["cardStatus"] = g_cardData.cardStatus.c_str();
+            
+            doc["Card Status"] = g_cardData.cardStatus.c_str();
         }
     }
 
@@ -2173,7 +2180,7 @@ enum idcState {
         idcWAITFORCARD,
         idcWAITFORTOKEN,
         idcWAITFORINFO,
-        idcFORMATINFO,
+        idcDISPLAYINGINFO,
         idcCLEANUP
     }
     static idcState = idcINIT;
@@ -2224,7 +2231,7 @@ enum idcState {
             // timer to limit this state
             if (millis() - processStartMilliseconds > 15000) {
                 debugEvent("took too long to get token, user info aborts");
-                processStartMilliseconds = 0;
+                processStartMilliseconds = 0; // XXX do we need this ?
                 writeToLCD("Timeout token", "Try Again");
                 buzzerBadBeep();
                 delay(2000);
@@ -2238,7 +2245,13 @@ enum idcState {
   
         if ( g_clientInfo.isValid ) {
             // got client data, let's move on
-            idcState = idcFORMATINFO;
+            g_identifyCardResult = clientInfoToJSON(0,"OK", true);
+            String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
+            writeToLCD("Card is for",fullName.substring(0,15));
+            buzzerGoodBeep();
+            processStartMilliseconds = millis();
+            idcState = idcDISPLAYINGINFO;
+
         } else {
             // timer to limit this state
             if (millis() - processStartMilliseconds > 15000) {
@@ -2252,20 +2265,16 @@ enum idcState {
         } // Otherwise we stay in this state
         break;
 
-    case idcFORMATINFO: {
-
-        g_identifyCardResult = clientInfoToJSON(0,"OK", true);
-
-        String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
-        writeToLCD("Card is for",fullName.substring(0,15));
-        buzzerGoodBeep();
-        delay(5000);  // does this delay prevent the app from getting the info?
-        idcState = idcCLEANUP;
+    case idcDISPLAYINGINFO: {
+        if (millis() - processStartMilliseconds > 3000) {
+            idcState = idcCLEANUP;
+        }
+        // if it hasn't been five seconds, stay in this state
         break;
     }
 
     case idcCLEANUP:
-
+        writeToLCD("idcard done", " ");
         g_adminCommandData = "";
         g_adminCommand = acIDLE; 
         idcState = idcINIT;
@@ -2276,6 +2285,7 @@ enum idcState {
 
     }
 
+    return;
 }
 
 
