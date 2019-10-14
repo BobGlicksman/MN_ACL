@@ -156,6 +156,7 @@
  *            fixed bug in isClientOkToCheckIn where members in the renewal week were denied
  *            fixed bug in JSON back to android app
  *            changed identifyCard so app gets result faster
+ *            separated cardUID test from account status test for better app messages 
 ************************************************************************/
 #define MN_FIRMWARE_VERSION 1.084
 
@@ -423,13 +424,13 @@ void writeToLCD(String line1, String line2) {
             lcd.setCursor(0,0);
             lcd.print(BLANKLINE);
             lcd.setCursor(0,0);
-            lcd.print(line1);                        
+            lcd.print(line1.substring(0,15));                        
         }
         if (line2.length() > 0){
             lcd.setCursor(0,1);
             lcd.print(BLANKLINE);
             lcd.setCursor(0,1);
-            lcd.print(line2);
+            lcd.print(line2.substring(0,15));
         }
     }
     
