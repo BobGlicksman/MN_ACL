@@ -10,6 +10,7 @@
 // This #include statement was automatically added by the Particle IDE.
 #include <Adafruit_PN532.h>
 
+
 // Sector to use for testing
 const int SECTOR = 3;	// Sector 0 is manufacturer data and sector 1 is real MN data
 
@@ -101,6 +102,44 @@ void clearCardData() {
     g_cardData.cardStatus = "";
 }
 
+
+// xxx now that keys come from an include, this could be simpler; no need for JSON
+// xxx and should be "setRFIDKeys"
+// ------------- GET RFID KEYS -----------------
+// Get RFID Keys
+void responseRFIDKeys(const char *event, const char *data) {
+
+    g_secretKeysValid = false;
+    //const int capacity = JSON_ARRAY_SIZE(8) + JSON_OBJECT_SIZE(1) + 10;
+    StaticJsonDocument<800> docJSON;
+
+    // will it parse?
+    DeserializationError err = deserializeJson(docJSON, data ); // XXX
+    JSONParseError =  err.c_str();
+    if (!err) {
+        //We have valid JSON, get the key
+        JsonArray WriteKey = docJSON["WriteKey"];
+        JsonArray ReadKey = docJSON["ReadKey"];
+        JsonArray WriteKeyOld = docJSON["WriteKeyOld"];
+        JsonArray ReadKeyOld = docJSON["ReadKeyOld"];
+        for (int i=0;i<6;i++) {
+            g_secretKeyA[i] = WriteKey[i];
+            g_secretKeyB[i] = ReadKey[i];
+            g_secretKeyA_OLD[i] = WriteKeyOld[i];
+            g_secretKeyB_OLD[i] = ReadKeyOld[i];
+            g_secretKeysValid = true;
+        }
+            
+        debugEvent("key parsed");
+        buzzerGoodBeep();
+       
+    } else {
+        writeToLCD("JSON KEY error",JSONParseError);
+        buzzerBadBeep();
+        delay(5000);
+    }
+    
+}
 
 /**************************************************************************************
  * createTrailerBlock():  creates a 16 byte data block from two 6 byte keys and 4 bytes

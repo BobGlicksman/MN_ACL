@@ -84,6 +84,9 @@ struct  struct_clientInfo {  // holds info on the current client
 
 extern struct_clientInfo g_clientInfo;
 
+extern String JSONParseError;
+ 
+
 void buzzerBadBeep();
 
 void buzzerGoodBeep();

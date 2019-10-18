@@ -16,6 +16,9 @@ enumDeviceConfigType  eDeviceConfigType;
 struct_clientInfo g_clientInfo;
 structEEPROMdata EEPROMdata;
 
+String JSONParseError = "";
+
+
 // instatiate the LCD
 LiquidCrystal lcd(A0, A1, A2, A3, D5, D6);
 

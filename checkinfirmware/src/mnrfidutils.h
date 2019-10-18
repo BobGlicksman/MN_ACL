@@ -32,6 +32,11 @@ void mnrfidInit();
 // ---------------- clearCardData -----------
 void clearCardData();
 
+// ------------- GET RFID KEYS -----------------
+// Get RFID Keys
+void responseRFIDKeys(const char *event, const char *data);
+
+
 /**************************************************************************************
  * createTrailerBlock():  creates a 16 byte data block from two 6 byte keys and 4 bytes
  *  of access control data. The data blcok is assembled in the global array "data"

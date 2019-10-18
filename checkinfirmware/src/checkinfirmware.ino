@@ -187,7 +187,7 @@ String g_queryMemberResult = ""; // JSON formatted name:value pairs.  ClientName
                                  // Will also contain errorCode which app should check to be 0. See function cloudQueryMember.
 String g_identifyCardResult = ""; // JSON formatted name:value pairs. ClientName, ClientID. Admin app will display all values.
                                  // Will also contain errorCode which app should check to be 0. See function cloudIdentifyCard.
-String JSONParseError = "";
+
 String g_recentErrors = "";
 String debug2 = "";
 int debug3 = 0;
@@ -352,42 +352,7 @@ void ezfReceiveCheckInToken (const char *event, const char *data)  {
     }
 }
 
-// ------------- GET RFID KEYS -----------------
 
-// Get RFID Keys
-void responseRFIDKeys(const char *event, const char *data) {
-
-    g_secretKeysValid = false;
-    //const int capacity = JSON_ARRAY_SIZE(8) + JSON_OBJECT_SIZE(1) + 10;
-    StaticJsonDocument<800> docJSON;
-
-    // will it parse?
-    DeserializationError err = deserializeJson(docJSON, data ); // XXX
-    JSONParseError =  err.c_str();
-    if (!err) {
-        //We have valid JSON, get the key
-        JsonArray WriteKey = docJSON["WriteKey"];
-        JsonArray ReadKey = docJSON["ReadKey"];
-        JsonArray WriteKeyOld = docJSON["WriteKeyOld"];
-        JsonArray ReadKeyOld = docJSON["ReadKeyOld"];
-        for (int i=0;i<6;i++) {
-            g_secretKeyA[i] = WriteKey[i];
-            g_secretKeyB[i] = ReadKey[i];
-            g_secretKeyA_OLD[i] = WriteKeyOld[i];
-            g_secretKeyB_OLD[i] = ReadKeyOld[i];
-            g_secretKeysValid = true;
-        }
-            
-        debugEvent("key parsed");
-        buzzerGoodBeep();
-       
-    } else {
-        writeToLCD("JSON KEY error",JSONParseError);
-        buzzerBadBeep();
-        delay(5000);
-    }
-    
-}
 
 // ------------ ClientInfo Utility Functions -------------------
 
