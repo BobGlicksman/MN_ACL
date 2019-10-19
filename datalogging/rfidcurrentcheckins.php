@@ -35,11 +35,9 @@ if (mysqli_connect_errno()) {
 $result = mysqli_query($con, $selectSQL);
 
 // Construct the page
-
-//$now = time();
-//$rightNow = date_timezone_set ( $now, 'America/New_York' );
-//$html =  str_replace("<<REFRESHTIME>>",date('Y-m-d H:i:s (e)'),$html);
-$html =  str_replace("<<REFRESHTIME>>","Updates every 15 seconds",$html);
+$today = new DateTime(); 
+$today->setTimeZone(new DateTimeZone("America/Los_Angeles")); 
+$html =  str_replace("<<REFRESHTIME>>","Updated: " . date_format($today, "Y-m-d H:i:s"),$html);
 
 if (mysqli_num_rows($result) > 0) {
 	
