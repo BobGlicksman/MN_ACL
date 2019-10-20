@@ -1,11 +1,13 @@
 <?php
 
-// Show photos of everyone who checked in today.
+// Show photos of everyone who is checked in today.
 //
 // Creative Commons: Attribution/Share Alike/Non Commercial (cc) 2019 Maker Nexus
 // By Jim Schrempp
 
 include 'commonfunctions.php';
+
+allowWebAccess();  // if IP not allowed, then die
 
 // get the HTML skeleton
 $myfile = fopen("rfidcurrentcheckinshtml.txt", "r") or die("Unable to open file!");
@@ -44,7 +46,7 @@ if (mysqli_num_rows($result) > 0) {
 	// output data of each row
     while($row = mysqli_fetch_assoc($result)) {
     	
-        $thisDiv = makeDiv( $row["firstName"], $row["clientID"]);
+        $thisDiv = makeDiv( $row["firstName"], $row["clientID"]) . "\r\n";
     	
     	$photodivs = $photodivs . $thisDiv;
     }
@@ -68,5 +70,9 @@ function makeImageURL($data) {
 	return "<img class='IDPhoto' alt='no photo' src='https://c226212.ssl.cf0.rackcdn.com/" . $data . ".jpg'>";
 }
 function makeDiv($name, $clientID) {
-	return "<div class='photodiv' >" . makeImageURL($clientID) . "<p class='photoname'>" . $name . "</div>";
+	return "<div class='photodiv' >" . makeImageURL($clientID) . makeNameCheckoutAction($clientID, $name) . "</div>";
 }	
+function makeNameCheckoutAction($clientID, $name) {
+  return "<p class='photoname' onclick=\"checkout('" . $clientID . "','" . $name . "')\">" . $name . "</p>";
+}
+?>
