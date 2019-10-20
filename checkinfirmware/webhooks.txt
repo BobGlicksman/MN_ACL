@@ -7,7 +7,7 @@ file.
 
 {
     "event": "RFIDLogging",
-    "url": "http://somewhere.com/rfidlog.php",
+    "url": "http://rfid.makernexuswiki.com/rfidcheckin.php",
     "requestType": "POST",
     "noDefaults": false,
     "rejectUnauthorized": false
