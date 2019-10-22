@@ -85,6 +85,9 @@ struct  struct_clientInfo {  // holds info on the current client
 extern struct_clientInfo g_clientInfo;
 
 extern String JSONParseError;
+
+extern bool allowParticlePublish;  // when false, debugEvent will hold off on publishing
+                                   // needed when in a partcle cloud callback routine
  
 
 void buzzerBadBeep();
@@ -111,6 +114,10 @@ void debugEvent (String message);
 //    logData - optional freeform text up to 250 characters
 //    clientID - optional if this event was for a particular client 
 void logToDB(String logEvent, String logData, int clientID, String clientFirstName);
+
+// This is the return called by Particle cloud when the RFIDLogging webhook completes
+//
+void RFIDLoggingReturn (const char *event, const char *data);
 
 // Write to the EEPROM 
 //

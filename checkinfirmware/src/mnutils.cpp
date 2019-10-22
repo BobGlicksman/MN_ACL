@@ -18,6 +18,8 @@ structEEPROMdata EEPROMdata;
 
 String JSONParseError = "";
 
+bool allowParticlePublish = true;
+
 
 // instatiate the LCD
 LiquidCrystal lcd(A0, A1, A2, A3, D5, D6);
@@ -49,13 +51,13 @@ void writeToLCD(String line1, String line2) {
             lcd.setCursor(0,0);
             lcd.print(BLANKLINE);
             lcd.setCursor(0,0);
-            lcd.print(line1.substring(0,15));                        
+            lcd.print(line1.substring(0,16));                        
         }
         if (line2.length() > 0){
             lcd.setCursor(0,1);
             lcd.print(BLANKLINE);
             lcd.setCursor(0,1);
-            lcd.print(line2.substring(0,15));
+            lcd.print(line2.substring(0,16));
         }
     }
     
@@ -109,14 +111,17 @@ void debugEvent (String message) {
     if (messageBuffer.length() > 0) {
         
         // a message buffer is waiting
-    
-        int rtnCode = particlePublish ("debugX", messageBuffer);
-        
-        if ( rtnCode == 0 ) {
-        
-            // it succeeded
-            messageBuffer = "";
-        
+
+        if (allowParticlePublish) {
+            
+            int rtnCode = particlePublish ("debugX", messageBuffer);
+            
+            if ( rtnCode == 0 ) {
+            
+                // it succeeded
+                messageBuffer = "";
+            
+            }
         }
     }
 }
@@ -146,6 +151,14 @@ void logToDB(String logEvent, String logData, int clientID, String clientFirstNa
     Particle.publish("RFIDLogging",publishvalue,PRIVATE);
 
     return;
+
+}
+
+// This is the return called by Particle cloud when the RFIDLogging webhook completes
+//
+void RFIDLoggingReturn (const char *event, const char *data) {
+
+    debugEvent("called by rfidlogging webhook");
 
 }
 

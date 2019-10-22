@@ -159,8 +159,9 @@
  *            separated cardUID test from account status test for better app messages
  *       1.09 created mnutils include file
  *            created mnrfidutils include file 
+ *       1.10 moved all webhook callbacks to one routine
 ************************************************************************/
-#define MN_FIRMWARE_VERSION 1.09
+#define MN_FIRMWARE_VERSION 1.10
 
 // Our RFID card encryption keys
 #include "rfidkeys.h"
@@ -303,6 +304,42 @@ int cloudSetDeviceType(String data) {
 
 }
 
+
+//--------------- ezfParticleCallback --------------------
+// 
+// This routine  is registered with the particle cloud to receive any
+// events that begin with this device and "ezf". This routine will accept
+// the callback and then call the appropriate handler.
+//
+void ezfParticleCallback (const char *event, const char *data) {
+
+    // hold off on debugEvent publishing while callback is active
+    allowParticlePublish = false;
+
+    String eventName = String(event);
+    String myDeviceID = System.deviceID();
+    
+    // NOTE: NEVER call particle publish (incuding debugEvent) from any
+    // routine called from here. Your Particle  processor will  panic
+
+    if (eventName.indexOf(myDeviceID + "ezfCheckInToken") >= 0) {
+    
+        ezfReceiveCheckInToken(event, data );       
+
+    } else if (eventName.indexOf(myDeviceID + "ezfClientByMemberNumber") >= 0) {
+
+        ezfReceiveClientByMemberNumber(event, data );
+
+    } else if (eventName.indexOf(myDeviceID + "ezfClientByClientID") >= 0) {
+
+        ezfReceiveClientByClientID(event, data );
+
+    }
+
+    allowParticlePublish = true;
+    
+}
+
 // ------------- Get Authorization Token ----------------
 
 int ezfGetCheckInTokenCloud (String data) {
@@ -312,6 +349,8 @@ int ezfGetCheckInTokenCloud (String data) {
     
 }
 
+// Don't call this faster than every 30 seconds, give the 
+// last call time to complete
 int ezfGetCheckInToken () {
     
     if (g_authTokenCheckIn.goodUntil < millis() ) {
@@ -329,9 +368,11 @@ int ezfGetCheckInToken () {
 void ezfReceiveCheckInToken (const char *event, const char *data)  {
     
     // accumulate response data
-    g_tokenResponseBuffer = g_tokenResponseBuffer + String(data);
-    
-    debugEvent ("Receive CI token " + String(data) );
+    g_tokenResponseBuffer = g_tokenResponseBuffer + data;
+
+    static int partsCnt = 0;
+    partsCnt++;
+    debugEvent ("Received CI token part "+ String(partsCnt) + String(data).substring(0,15) );
     
     const int capacity = JSON_OBJECT_SIZE(8) + 2*JSON_OBJECT_SIZE(8);
     StaticJsonDocument<capacity> docJSON;
@@ -347,7 +388,7 @@ void ezfReceiveCheckInToken (const char *event, const char *data)  {
         g_authTokenCheckIn.token = String(docJSON["access_token"].as<char*>());
         g_authTokenCheckIn.goodUntil = millis() + docJSON["expires_in"].as<int>()*1000 - 5000;   // set expiry five seconds early
         
-        debugEvent ("now " + String(millis()) + "  Good Until  " + String(g_authTokenCheckIn.goodUntil) );
+        debugEvent ("have token now " + String(millis()) + "  Good Until  " + String(g_authTokenCheckIn.goodUntil) );
    
     }
 }
@@ -474,23 +515,31 @@ int clientInfoFromJSONArray (String data) {
             JsonObject root_0 = docJSON[0];
 
             g_clientInfo.clientID = root_0["ClientID"].as<int>();
+
+            if (g_clientInfo.clientID == 0) {
+
+                g_clientInfo.firstName = "Member not found";
+                g_clientInfo.isValid = true;
+
+            } else {
             
-            g_clientInfo.contractStatus = root_0["MembershipContractStatus"].as<char*>();
-            
-            String fieldName = root_0["CustomFields"][0]["Name"].as<char*>();
-            
-            if (fieldName.indexOf("RFID Card UID") >= 0) {
-               g_clientInfo.RFIDCardKey = root_0["CustomFields"][0]["Value"].as<char*>(); 
+                g_clientInfo.contractStatus = root_0["MembershipContractStatus"].as<char*>();
+                
+                String fieldName = root_0["CustomFields"][0]["Name"].as<char*>();
+                
+                if (fieldName.indexOf("RFID Card UID") >= 0) {
+                g_clientInfo.RFIDCardKey = root_0["CustomFields"][0]["Value"].as<char*>(); 
+                }
+
+                g_clientInfo.lastName = String(root_0["LastName"].as<char*>());
+                g_clientInfo.firstName = String(root_0["FirstName"].as<char*>());
+
+                g_clientInfo.memberNumber = String(root_0["MembershipNumber"].as<char*>());
+
+                g_clientInfo.amountDue = root_0["AmountDue"]; 
+                
+                g_clientInfo.isValid = true;
             }
-
-            g_clientInfo.lastName = String(root_0["LastName"].as<char*>());
-            g_clientInfo.firstName = String(root_0["FirstName"].as<char*>());
-
-            g_clientInfo.memberNumber = String(root_0["MembershipNumber"].as<char*>());
-
-            g_clientInfo.amountDue = root_0["AmountDue"]; 
-            
-            g_clientInfo.isValid = true;
 
         }
         
@@ -806,6 +855,10 @@ String isClientOkToCheckIn (){
 
 int cloudQueryMember(String data ) {
 
+    // xxx after a timeout here the lcd goes to idle message. If you  call this again  with
+    // the same number then it thinks the previous data is the result and returns 2, correctly, 
+    // but  the display remains in idle  message 
+
     int queryMemberNum = data.toInt();
     if (queryMemberNum == 0){
         // error, data is not a number or it really is 0
@@ -947,6 +1000,7 @@ void loopCheckIn() {
         cilASKFORCLIENTINFO, 
         cilWAITFORCLIENTINFO, 
         cilCHECKINGIN, 
+        cilSHOWINOROUT,
         cilERROR
     };
     
@@ -1073,24 +1127,31 @@ void loopCheckIn() {
                 debugEvent ("SM: now checkin client");
                 // tell EZF to check someone in
                 ezfCheckInClient(String(g_clientInfo.clientID));
-
-                String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
-                writeToLCD("Welcome",fullName.substring(0,15));
-                digitalWrite(ADMIT_LED,HIGH);
-                buzzerGoodBeeps2();
-                delay(1000);
-                digitalWrite(ADMIT_LED,LOW);
                 
                 // log this to DB 
+                processStartMilliseconds = millis();
                 logToDB("checkin allowed","",g_clientInfo.clientID,g_clientInfo.firstName);
-                
-                cilloopState = cilWAITFORCARD;
-            
-                }
+                cilloopState = cilSHOWINOROUT;
+
+            }
         }
+    }
+    case cilSHOWINOROUT:{
+        //when we hear back from the logging database we know what to display
+
+        String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
+        writeToLCD("Welcome",fullName.substring(0,15));
+        digitalWrite(ADMIT_LED,HIGH);
+        buzzerGoodBeeps2();
+        delay(1000);
+        digitalWrite(ADMIT_LED,LOW);
+        
+        cilloopState = cilWAITFORCARD;
+        break;
     }
     case cilERROR:
         break;
+
     default:
         break;
     } //switch (mainloopState)
@@ -1154,6 +1215,8 @@ enum idcState {
                 writeToLCD("Card read fail",g_cardData.cardStatus);
                 g_identifyCardResult = clientInfoToJSON(1,"Card read failed",true);
                 idcState = idcCLEANUP;
+            } else {
+                //remain in this state
             }
         }
         break;
@@ -1328,7 +1391,7 @@ void adminGetUserInfo(int clientID, String memberNumber) {
         g_queryMemberResult = clientInfoToJSON(0, "OK", false);
 
         String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
-        writeToLCD("Selected",fullName.substring(0,15));
+        writeToLCD("Selected:",fullName.substring(0,16));
 
         processStartMilliseconds = millis();
         guiState = guiDISPLAYINGINFO;
@@ -1492,6 +1555,7 @@ void setup() {
     //Particle.variable ("RFIDCardKey", g_clientInfo.RFIDCardKey);
     //Particle.variable ("g_Packages",g_packages);
     //success = Particle.function("GetCheckInToken", ezfGetCheckInTokenCloud);
+    // xxx
     //Particle.variable ("debug2", debug2);
     //Particle.variable ("debug3", debug3);
     //Particle.variable ("debug4", debug4);
@@ -1500,16 +1564,14 @@ void setup() {
  
     // Used by all device types
     success = Particle.function("SetDeviceType", cloudSetDeviceType);
+    // xxx limit of 4 handlers??? Particle.subscribe(System.deviceID() + "RFIDLoggingReturn", RFIDLoggingReturn, MY_DEVICES);
 
     // Used to test CheckIn
     success = Particle.function("RFIDCardRead", cloudRFIDCardRead);
 
-    // Needed for Checkin
-    Particle.subscribe(System.deviceID() + "ezfCheckInToken", ezfReceiveCheckInToken, MY_DEVICES);
-    Particle.subscribe(System.deviceID() + "ezfClientByMemberNumber", ezfReceiveClientByMemberNumber, MY_DEVICES);
-    Particle.subscribe(System.deviceID() + "ezfClientByClientID", ezfReceiveClientByClientID, MY_DEVICES);
-    Particle.subscribe(System.deviceID() + "RFIDKeys", responseRFIDKeys, MY_DEVICES);
-
+    // Needed for all devices
+    Particle.subscribe(System.deviceID() + "ezf",ezfParticleCallback, MY_DEVICES);
+    
     // Used by device types for machine usage permission validation
     //success = Particle.function("PackagesByClientID",ezfGetPackagesByClientID);
     //Particle.subscribe(System.deviceID() + "ezfGetPackagesByClientID",ezfReceivePackagesByClientID, MY_DEVICES);
@@ -1536,30 +1598,10 @@ void setup() {
     digitalWrite(ADMIT_LED,LOW);
     digitalWrite(REJECT_LED,LOW);
 
-
-    // Get the RFID secret keys 
-    writeToLCD("Requesting RFID", "Keys");
     g_secretKeysValid = false;
-    //Particle.publish("RFIDKeys", "junk1", PRIVATE);
-    unsigned long processStartMilliseconds = millis();
 
-// xxx responseRFIDKeys debugging since we are not getting called back from the webhook for some reason...
     //RFIDKeysJSON from include file
-    //responseRFIDKeys("junk", "{\"WriteKey\":[160,161,162,163,164,165],\"ReadKey\":[176,177,178,179,180,181] }");
     responseRFIDKeys("junk", RFIDKeysJSON);
-
-    while (!g_secretKeysValid) {
-        Particle.process();
-        if (millis() - processStartMilliseconds > 15000) {
-            debugEvent("took too long to get RFID Keys, init fails, all stop.");
-            writeToLCD("Timeout on Keys", "fatal error");
-            buzzerBadBeep();
-            while (true) {Particle.process();}  // Just get stuck here. Without the RFID keys we can't do anything.
-        }
-    }
-    //we have the keys
-    writeToLCD(" "," ");
-    
 
     // Signal ready to go
     writeToLCD(deviceTypeToString(EEPROMdata.deviceType),"ver. " + String(MN_FIRMWARE_VERSION));
