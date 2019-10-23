@@ -65,15 +65,14 @@ $resultCheckin = mysqli_query($con, $currentStatusSQL);
 
 // determine if the client is currently checked in or checked out
 $isClientCheckedIn = false; 
+$lastCheckedInTime = "";
 if (mysqli_num_rows($resultCheckin)) {
 
     $returnedRow = mysqli_fetch_assoc($resultCheckin);
-
-    $lastCheckInStatus = $returnedRow["logEvent"];
     
     if (strcmp($returnedRow["logEvent"],"Checked In") == 0) {
         // they were found checked in
-
+        $lastCheckedInTime = $returnedRow["dateEventLocal"];
         $isClientCheckedIn = true;
     }
 }
@@ -116,15 +115,20 @@ if (strpos(" " . $logEvent,"checkin allowed") == 1) {
 
     // check the person in or out
     $checkInOutSQL = str_replace("<<deviceFunction>>", "rfidcheckin.php", $checkInOutSQL);
-    $checkInOutSQL = str_replace("<<logData>>", "", $checkInOutSQL);
+    
 
     if ($isClientCheckedIn) {
         // They are checked in, so check them out
         $checkInOutSQL = str_replace("<<logEvent>>","Checked Out" , $checkInOutSQL);
+
+        $minutesInSpace = round((strtotime($dateEventLocal) - strtotime($lastCheckedInTime) )/60);
+
+        $checkInOutSQL = str_replace("<<logData>>", $minutesInSpace , $checkInOutSQL);
         $returnMessage = "Checked Out";
     } else {
         // They are checked out, so check them in
         $checkInOutSQL = str_replace("<<logEvent>>","Checked In" , $checkInOutSQL);
+        $checkInOutSQL = str_replace("<<logData>>", "", $checkInOutSQL);
         $returnMessage = "Checked In";
     }
 
