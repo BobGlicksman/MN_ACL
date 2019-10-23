@@ -9,6 +9,9 @@ include 'commonfunctions.php';
 
 allowWebAccess();  // if IP not allowed, then die
 
+$today = new DateTime(); 
+$today->setTimeZone(new DateTimeZone("America/Los_Angeles")); 
+
 // get the HTML skeleton
 $myfile = fopen("rfidcurrentcheckinshtml.txt", "r") or die("Unable to open file!");
 $html = fread($myfile,filesize("rfidcurrentcheckinshtml.txt"));
@@ -23,11 +26,18 @@ $dbName = $ini_array["SQL_DB"]["dataBaseName"];
 $con = mysqli_connect("localhost",$dbUser,$dbPassword,$dbName);
   
 $selectSQL = 
-"SELECT * FROM rawdata
- WHERE logEvent = 'checkin allowed'
-   AND CONVERT( dateEventLocal, DATE) = CONVERT( now(), DATE) 
- GROUP BY clientID
- ORDER BY recNum DESC;";
+"SELECT * FROM rawdata JOIN
+(
+ SELECT  MAX(recNum) as maxRecNum, clientID FROM rawdata
+   WHERE logEvent in ('Checked In','Checked Out')
+     AND CONVERT( dateEventLocal, DATE) = CONVERT( '" . date_format($today, "Y-m-d") . "', DATE) 
+     AND clientID <> 0
+  GROUP by clientID
+) AS x
+on rawdata.recNum = x.maxRecNum
+where logEvent = 'Checked In' 
+ORDER BY rawdata.dateEventLocal DESC ";
+
 
 // Check connection
 if (mysqli_connect_errno()) {
@@ -37,21 +47,20 @@ if (mysqli_connect_errno()) {
 $result = mysqli_query($con, $selectSQL);
 
 // Construct the page
-$today = new DateTime(); 
-$today->setTimeZone(new DateTimeZone("America/Los_Angeles")); 
+
 $html =  str_replace("<<REFRESHTIME>>","Updated: " . date_format($today, "Y-m-d H:i:s"),$html);
 
 if (mysqli_num_rows($result) > 0) {
 	
-	// output data of each row
-    while($row = mysqli_fetch_assoc($result)) {
-    	
-        $thisDiv = makeDiv( $row["firstName"], $row["clientID"]) . "\r\n";
-    	
-    	$photodivs = $photodivs . $thisDiv;
-    }
+  // output data of each row
+  while($row = mysqli_fetch_assoc($result)) {
     
-    $html = str_replace("<<PHOTODIVS>>",$photodivs, $html);
+      $thisDiv = makeDiv( $row["firstName"], $row["clientID"]) . "\r\n";
+    
+    $photodivs = $photodivs . $thisDiv;
+  }
+  
+  $html = str_replace("<<PHOTODIVS>>",$photodivs, $html);
 
     
 } else {
