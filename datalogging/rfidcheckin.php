@@ -50,12 +50,14 @@ $con = mysqli_connect("localhost",$dbUser,$dbPassword,$dbName);
 
 // SQL to determine if this person is checked in or out
 // by getting most recent status for this clientID 
-// xxx note that timezone is not accounted for
+$today = new DateTime(); 
+$today->setTimeZone(new DateTimeZone("America/Los_Angeles"));
+
 $currentStatusSQL = 
 "SELECT * FROM rawdata 
 WHERE clientID = <<clientID>> 
   AND logEvent in ('Checked In','Checked Out')
-  AND CONVERT( dateEventLocal, DATE) = CONVERT( now(), DATE) 
+  AND CONVERT( dateEventLocal, DATE) = CONVERT('" . date_format($today, "Y-m-d") . "', DATE) 
 ORDER BY dateEventLocal DESC 
 LIMIT 1";
 
