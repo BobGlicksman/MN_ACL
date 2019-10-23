@@ -160,6 +160,8 @@
  *       1.09 created mnutils include file
  *            created mnrfidutils include file 
  *       1.10 moved all webhook callbacks to one routine
+ *            now LCD shows checked in or out based on our database
+ *            second callback routine for mnlogdb... webhooks
 ************************************************************************/
 #define MN_FIRMWARE_VERSION 1.10
 
@@ -188,6 +190,10 @@ String g_queryMemberResult = ""; // JSON formatted name:value pairs.  ClientName
                                  // Will also contain errorCode which app should check to be 0. See function cloudQueryMember.
 String g_identifyCardResult = ""; // JSON formatted name:value pairs. ClientName, ClientID. Admin app will display all values.
                                  // Will also contain errorCode which app should check to be 0. See function cloudIdentifyCard.
+bool g_checkInOutResponseValid = false;
+String g_checkInOutResponseBuffer = "";
+String g_checkInOutActionTaken = "";
+
 
 String g_recentErrors = "";
 String debug2 = "";
@@ -304,17 +310,52 @@ int cloudSetDeviceType(String data) {
 
 }
 
+//--------------- particleCallbackMNLOGDB --------------------
+// 
+// This routine  is registered with the particle cloud to receive any
+// events that begin with this device and "mnlogdb". This routine will accept
+// the callback and then call the appropriate handler.
+//
+void particleCallbackMNLOGDB (const char *event, const char *data) {
 
-//--------------- ezfParticleCallback --------------------
+   // hold off on debugEvent publishing while callback is active
+    allowDebugToPublish = false;
+
+    String eventName = String(event);
+    String myDeviceID = System.deviceID();
+    
+    // NOTE: NEVER call particle publish (incuding debugEvent) from any
+    // routine called from here. Your Particle  processor will  panic
+
+    if (eventName.indexOf(myDeviceID + "mnlogdbCheckInOut") >= 0) {
+    
+        mnlogdbCheckInOutResponse(event, data );       
+
+    } else if (eventName.indexOf(myDeviceID + "mnlogdbCheckInOutError") >= 0) {
+
+        debugEvent("mnlogdbCheckinError: " + String(data));
+
+    } else {
+
+        debugEvent("unknown particle event 2: " + String(event));
+
+    }
+
+    allowDebugToPublish = true;
+    
+}
+
+
+//--------------- particleCallbackEZF --------------------
 // 
 // This routine  is registered with the particle cloud to receive any
 // events that begin with this device and "ezf". This routine will accept
 // the callback and then call the appropriate handler.
 //
-void ezfParticleCallback (const char *event, const char *data) {
+void particleCallbackEZF (const char *event, const char *data) {
 
     // hold off on debugEvent publishing while callback is active
-    allowParticlePublish = false;
+    allowDebugToPublish = false;
 
     String eventName = String(event);
     String myDeviceID = System.deviceID();
@@ -334,9 +375,16 @@ void ezfParticleCallback (const char *event, const char *data) {
 
         ezfReceiveClientByClientID(event, data );
 
+    } else if (eventName.indexOf(myDeviceID + "ezfCheckInClient") >= 0) {
+
+        // known webhook, but we don't do anything with the return code
+
+    } else {
+
+        debugEvent("unknown particle event 1: " + String(event));
     }
 
-    allowParticlePublish = true;
+    allowDebugToPublish = true;
     
 }
 
@@ -698,6 +746,46 @@ void ezfReceivePackagesByClientID (const char *event, const char *data)  {
         
     }
         
+}
+
+// ---------- mnlogdbCheckInOut ---------------
+// call when a client is allowed in. This will call the mnlogdbCheckInOut webhook.
+// That webhook will respond to mnlogdbCheckInOutResponse
+void mnlogdbCheckInOut(int clientID, String firstName) {
+
+    g_checkInOutResponseValid = false;
+    g_checkInOutResponseBuffer = "";
+    logCheckInOut("checkin allowed","",clientID,firstName);
+
+}
+
+// -------------- mnlogdbCheckInResponse -----------
+//
+// Handles response from call to checkinout webhook
+//
+// sets global variable to say if person was checked in or checked out
+// for use by loopCheckin
+
+void mnlogdbCheckInOutResponse (const char *event, const char *data)  {
+
+    g_checkInOutResponseBuffer = g_checkInOutResponseBuffer + data;
+
+    // get content of <ActionTaken> tags
+    int tagStartPos = g_checkInOutResponseBuffer.indexOf("<ActionTaken>");
+    int valueEndPos = g_checkInOutResponseBuffer.indexOf("</ActionTaken>");
+    if ( (tagStartPos < 0) || (valueEndPos <0) ){
+        // Didn't find the tags from the php script, must not have it all yet
+
+    } else {
+
+        String actionTaken = g_checkInOutResponseBuffer.substring(tagStartPos + 13, valueEndPos );
+        //xxx debugEvent("action tag value:" + actionTaken);
+
+        // store results and return
+        g_checkInOutActionTaken = actionTaken;
+        g_checkInOutResponseValid = true;
+
+    }
 }
 
 // ----------------- CHECK IN CLIENT -------------------
@@ -1128,25 +1216,51 @@ void loopCheckIn() {
                 // tell EZF to check someone in
                 ezfCheckInClient(String(g_clientInfo.clientID));
                 
-                // log this to DB 
+                // log this to our DB 
                 processStartMilliseconds = millis();
-                logToDB("checkin allowed","",g_clientInfo.clientID,g_clientInfo.firstName);
+                mnlogdbCheckInOut(g_clientInfo.clientID,g_clientInfo.firstName );
+                
                 cilloopState = cilSHOWINOROUT;
 
             }
         }
     }
     case cilSHOWINOROUT:{
-        //when we hear back from the logging database we know what to display
 
-        String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
-        writeToLCD("Welcome",fullName.substring(0,15));
-        digitalWrite(ADMIT_LED,HIGH);
-        buzzerGoodBeeps2();
-        delay(1000);
-        digitalWrite(ADMIT_LED,LOW);
-        
-        cilloopState = cilWAITFORCARD;
+        if (millis() - processStartMilliseconds > 5000) {
+            // took too long to get answer from our logging database
+            String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
+            writeToLCD("Thanks for a tap",fullName.substring(0,15) );
+            digitalWrite(ADMIT_LED,HIGH);
+            buzzerGoodBeeps2();
+            delay(1000);
+            digitalWrite(ADMIT_LED,LOW);
+            debugEvent("Timeout looking for action tag");
+            cilloopState = cilWAITFORCARD;
+
+        } else if (g_checkInOutResponseValid) {
+            // we have a response from our logging database
+            //when we hear back from the logging database we know what to display
+            if (g_checkInOutActionTaken.indexOf("Checked In") == 0){ 
+                String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
+                writeToLCD("Welcome",fullName.substring(0,15));
+                digitalWrite(ADMIT_LED,HIGH);
+                buzzerGoodBeeps2();
+                delay(1000);
+                digitalWrite(ADMIT_LED,LOW);
+            } else {
+                String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
+                writeToLCD("Goodbye",fullName.substring(0,15));
+                digitalWrite(ADMIT_LED,HIGH);
+                buzzerGoodBeeps3();
+                delay(1000);
+                digitalWrite(ADMIT_LED,LOW);
+            }
+            
+            cilloopState = cilWAITFORCARD;
+        } else {
+            // just stay in this state
+        }
         break;
     }
     case cilERROR:
@@ -1570,8 +1684,10 @@ void setup() {
     success = Particle.function("RFIDCardRead", cloudRFIDCardRead);
 
     // Needed for all devices
-    Particle.subscribe(System.deviceID() + "ezf",ezfParticleCallback, MY_DEVICES);
-    
+    Particle.subscribe(System.deviceID() + "ezf",particleCallbackEZF, MY_DEVICES);
+    Particle.subscribe(System.deviceID() + "mnlogdb",particleCallbackMNLOGDB, MY_DEVICES);
+
+
     // Used by device types for machine usage permission validation
     //success = Particle.function("PackagesByClientID",ezfGetPackagesByClientID);
     //Particle.subscribe(System.deviceID() + "ezfGetPackagesByClientID",ezfReceivePackagesByClientID, MY_DEVICES);

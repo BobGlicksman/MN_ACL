@@ -18,7 +18,7 @@ structEEPROMdata EEPROMdata;
 
 String JSONParseError = "";
 
-bool allowParticlePublish = true;
+bool allowDebugToPublish = true;
 
 
 // instatiate the LCD
@@ -36,6 +36,14 @@ void buzzerGoodBeeps2(){
     tone(BUZZER_PIN,750,50); //good
     delay(100);
     tone(BUZZER_PIN,750,50);
+}
+
+void buzzerGoodBeeps3(){
+    tone(BUZZER_PIN,1000,50); //good
+    delay(100);
+    tone(BUZZER_PIN,750,50);
+    delay(100);
+    tone(BUZZER_PIN,1000,50);
 }
 
 // writeToLCD
@@ -112,7 +120,7 @@ void debugEvent (String message) {
         
         // a message buffer is waiting
 
-        if (allowParticlePublish) {
+        if (allowDebugToPublish) {
             
             int rtnCode = particlePublish ("debugX", messageBuffer);
             
@@ -126,13 +134,16 @@ void debugEvent (String message) {
     }
 }
 
+
+
 // writes message to a webhook that will send it on to a cloud database
 // These have to be throttled to less than one per second on each device
 // Parameters:
 //    logEvent - a short reason for logging ("checkin","reboot","error", etc)
 //    logData - optional freeform text up to 250 characters
 //    clientID - optional if this event was for a particular client 
-void logToDB(String logEvent, String logData, int clientID, String clientFirstName){
+void publishToLogDB (String webhook, String logEvent, String logData, int clientID, String clientFirstName) {
+
     const size_t capacity = JSON_OBJECT_SIZE(10);
     DynamicJsonDocument doc(capacity);
 
@@ -148,9 +159,21 @@ void logToDB(String logEvent, String logData, int clientID, String clientFirstNa
     serializeJson(doc,JSON );
     String publishvalue = String(JSON);
 
-    Particle.publish("RFIDLogging",publishvalue,PRIVATE);
+    Particle.publish(webhook, publishvalue, PRIVATE);
 
     return;
+
+}
+
+void logToDB(String logEvent, String logData, int clientID, String clientFirstName){
+    
+    publishToLogDB("RFIDLogging", logEvent, logData, clientID, clientFirstName);
+
+}
+
+void logCheckInOut(String logEvent, String logData, int clientID, String clientFirstName) {
+
+    publishToLogDB("RFIDLogCheckInOut", logEvent, logData, clientID, clientFirstName);
 
 }
 

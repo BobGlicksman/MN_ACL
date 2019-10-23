@@ -86,7 +86,7 @@ extern struct_clientInfo g_clientInfo;
 
 extern String JSONParseError;
 
-extern bool allowParticlePublish;  // when false, debugEvent will hold off on publishing
+extern bool allowDebugToPublish;  // when false, debugEvent will hold off on publishing
                                    // needed when in a partcle cloud callback routine
  
 
@@ -96,6 +96,8 @@ void buzzerGoodBeep();
 
 void buzzerGoodBeeps2();
 
+void buzzerGoodBeeps3();
+
 void writeToLCD(String line1, String line2);
 
 //-------------- Particle Publish Routines --------------
@@ -104,7 +106,9 @@ void writeToLCD(String line1, String line2);
 
 int particlePublish (String eventName, String data); 
 
-// Call this from the main look with a null message
+// Call with any message. It will be buffered and published to the particle could as 
+// a debugEvent. View them in the Particle.io console.
+// Call this from the main loop with a null message to keep the debug events going 
 void debugEvent (String message);
 
 // writes message to a webhook that will send it on to a cloud database
@@ -114,6 +118,9 @@ void debugEvent (String message);
 //    logData - optional freeform text up to 250 characters
 //    clientID - optional if this event was for a particular client 
 void logToDB(String logEvent, String logData, int clientID, String clientFirstName);
+
+// similar to logToDB, but calls the webhook RFIDLogCheckInOut
+void logCheckInOut(String logEvent, String logData, int clientID, String clientFirstName);
 
 // This is the return called by Particle cloud when the RFIDLogging webhook completes
 //

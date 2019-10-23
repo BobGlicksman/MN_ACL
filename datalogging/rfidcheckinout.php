@@ -1,9 +1,5 @@
 <?php
 
-// Check In calls from the rfidreaders should go go rfidcheckinout.php
-// All other logging calls should go to rfidlogging.php
-// then this file should be deleted
-
 // SUBMIT CHECKIN/OUT DATA TO RFID LOGGING DATABASE
 // 
 // Call with POST and data of:
@@ -19,7 +15,7 @@
 //
 // Assume if a ClientID has not been seen today, then they are checked out
 //
-// RETURN "CheckedIn" or "CheckedOut"
+// RETURN <ActionTaken> tags containing "Checked In" or "Checked Out"
 //
 // Creative Commons: Attribution/Share Alike/Non Commercial (cc) 2019 Maker Nexus
 // By Jim Schrempp
@@ -48,6 +44,13 @@ $firstName =  cleanInput($myJSON["firstName"] );
 $clientID =  cleanInput($myJSON["clientID"] );
 $logEvent =  cleanInput($myJSON["logEvent"]);
 $logData =  cleanInput($myJSON["logData"] );
+
+if (strpos(" " . $logEvent,"checkin allowed") != 1) {
+
+    die ("This url is only for checkin allowed events.");
+
+}
+
 
 // set up SQL connection
 $con = mysqli_connect("localhost",$dbUser,$dbPassword,$dbName);
@@ -197,4 +200,4 @@ function printJSONError ($errorCode) {
 
 
 
-   ?>
+?>
