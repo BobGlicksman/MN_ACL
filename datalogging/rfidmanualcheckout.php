@@ -34,7 +34,7 @@ $datePublishedAt = $currentDateTime;
 $deviceFunction =  "manual checkout";
 cleanInput($myJSON["firstName"] );
 $logEvent =  "Checked Out";
-$logData =  "";
+$logData =  "9999";
 
 // set up SQL connection
 $con = mysqli_connect("localhost",$dbUser,$dbPassword,$dbName);
