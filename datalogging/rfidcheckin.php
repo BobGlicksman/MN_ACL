@@ -111,7 +111,8 @@ if (mysqli_query($con, $insertSQL)) {
 }
 
 // if the device has said we can check this person in, then toggle their status
-if (strpos($logEvent,"checkin allowed")==0) {
+// prepend a space to make this damn strpos work like any reasonable language would!
+if (strpos(" " . $logEvent,"checkin allowed") == 1) {
 
     // check the person in or out
     $checkInOutSQL = str_replace("<<deviceFunction>>", "rfidcheckin.php", $checkInOutSQL);
