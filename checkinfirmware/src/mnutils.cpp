@@ -18,6 +18,8 @@ structEEPROMdata EEPROMdata;
 
 String JSONParseError = "";
 
+bool allowDebugToPublish = true;
+
 
 // instatiate the LCD
 LiquidCrystal lcd(A0, A1, A2, A3, D5, D6);
@@ -36,6 +38,14 @@ void buzzerGoodBeeps2(){
     tone(BUZZER_PIN,750,50);
 }
 
+void buzzerGoodBeeps3(){
+    tone(BUZZER_PIN,1000,50); //good
+    delay(100);
+    tone(BUZZER_PIN,750,50);
+    delay(100);
+    tone(BUZZER_PIN,1000,50);
+}
+
 // writeToLCD
 // pass in "","" to clear screen 
 // pass in "" for one line to leave it unchanged
@@ -49,13 +59,13 @@ void writeToLCD(String line1, String line2) {
             lcd.setCursor(0,0);
             lcd.print(BLANKLINE);
             lcd.setCursor(0,0);
-            lcd.print(line1.substring(0,15));                        
+            lcd.print(line1.substring(0,16));                        
         }
         if (line2.length() > 0){
             lcd.setCursor(0,1);
             lcd.print(BLANKLINE);
             lcd.setCursor(0,1);
-            lcd.print(line2.substring(0,15));
+            lcd.print(line2.substring(0,16));
         }
     }
     
@@ -109,17 +119,22 @@ void debugEvent (String message) {
     if (messageBuffer.length() > 0) {
         
         // a message buffer is waiting
-    
-        int rtnCode = particlePublish ("debugX", messageBuffer);
-        
-        if ( rtnCode == 0 ) {
-        
-            // it succeeded
-            messageBuffer = "";
-        
+
+        if (allowDebugToPublish) {
+            
+            int rtnCode = particlePublish ("debugX", messageBuffer);
+            
+            if ( rtnCode == 0 ) {
+            
+                // it succeeded
+                messageBuffer = "";
+            
+            }
         }
     }
 }
+
+
 
 // writes message to a webhook that will send it on to a cloud database
 // These have to be throttled to less than one per second on each device
@@ -127,7 +142,8 @@ void debugEvent (String message) {
 //    logEvent - a short reason for logging ("checkin","reboot","error", etc)
 //    logData - optional freeform text up to 250 characters
 //    clientID - optional if this event was for a particular client 
-void logToDB(String logEvent, String logData, int clientID, String clientFirstName){
+void publishToLogDB (String webhook, String logEvent, String logData, int clientID, String clientFirstName) {
+
     const size_t capacity = JSON_OBJECT_SIZE(10);
     DynamicJsonDocument doc(capacity);
 
@@ -143,9 +159,29 @@ void logToDB(String logEvent, String logData, int clientID, String clientFirstNa
     serializeJson(doc,JSON );
     String publishvalue = String(JSON);
 
-    Particle.publish("RFIDLogging",publishvalue,PRIVATE);
+    Particle.publish(webhook, publishvalue, PRIVATE);
 
     return;
+
+}
+
+void logToDB(String logEvent, String logData, int clientID, String clientFirstName){
+    
+    publishToLogDB("RFIDLogging", logEvent, logData, clientID, clientFirstName);
+
+}
+
+void logCheckInOut(String logEvent, String logData, int clientID, String clientFirstName) {
+
+    publishToLogDB("RFIDLogCheckInOut", logEvent, logData, clientID, clientFirstName);
+
+}
+
+// This is the return called by Particle cloud when the RFIDLogging webhook completes
+//
+void RFIDLoggingReturn (const char *event, const char *data) {
+
+    debugEvent("called by rfidlogging webhook");
 
 }
 

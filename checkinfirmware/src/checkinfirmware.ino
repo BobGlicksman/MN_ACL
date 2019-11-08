@@ -91,76 +91,34 @@
  * 
  * 
  * PRE RELEASE DEVELOPMENT LOG
- * 1.01: Added tests to readCard and beep buzzer if read is bad (ie, returns clientID of 0).
- *       Also changed LCD messages a bit to reflect this new testing.
- *       readCard no longer blocks waiting for a card presentation; instead it
- *          returns with IN_PROCESS
- *       Cleaned up my quick implementation when Bob and I were first testing.
- * 1.02: Realized that having a state machine in the checkin code was confusing and not
- *          the way to go. Changed to have the only state machine in the main loop and
- *          now the code is much cleaner and easier to read. The states are all explicit.
- * 1.03: Added some buzzer feedback for user and some LCD messages.
  * 
  * (c) 2019; Team Practical Projects
  * 
  * Authors: Bob Glicksman, Jim Schrempp
- * version 1.03; 8/4/2019.
- * version 1.04: 8/25/2019 
- *      Moved all LCD writes to a common routine
- *      Added fimware update begin event so LCD can be cleared
- *      LED actions now in placement
- *      LCD messages when errors occur
- *      More beeps in places with errors
- *      Member name now displayed on successful checkin         
- * version 1.05: 8/31/2019
+ * 
+ *  This is a list of functionality that we want to make sure is in the documentation 
  *      Cloud function SetDeviceType must be called to set up machine. Values are in eDeviceConfigType
- *          Device Type is shown on LCD at end of setup.
- *      Established structure in loop() to handle different device configurations
- *      Added code to get RFID keys from Particle cloud, but the device is not receiving the cloud 
- *          response for some reason. Seach this code for "xxx responseRFIDKeys" to see the work around.
- * version 1.06 9/1/2019
- *      Moved some common code into loop()
- *      Admin loop working
- *      queryMember cloud function works. 
- *      burnCard function works but does not update EZF with client unique code yet
- * version 1.07 9/19/2019
- *      Added oAuth token request to main loop so it is hopefully done before first EZF call is made.     
+ *      Device Type is shown on LCD at end of setup.  
  *      Version string now shows on LCD at end of setup()
- *      Moved get of RFID tokens out of main loop and into setup(). If we don't get the keys that is a full stop failure.
- *      Added the card ID code to Admin device
- *      1.071 bug fix to the timeout code after displaying a query name
- *      1.072 prefixed cloud functions with "cloud"
- *            moved clientInfo serialization to a common routine
- *            added AmountDue to clientInfo
- *      1.073 now reads and burns UID from ezf correctly
- *      1.074 fix to burn UID
- *            client checkin now validates UID in card against EZF and checks contract status and amount due.
- *            JSON returned to Admin on "card info" now includes "Checkin" which tells what would happen if the
+ *      prefixed cloud functions with "cloud"
+ *      client checkin now validates UID in card against EZF and checks contract status and amount due.
+ *      JSON returned to Admin on "card info" now includes "Checkin" which tells what would happen if the
  *                card was used at a checkin terminal
- * version 1.08 9/22/2019
- *      Added logToDB() which writes to a webhook, the webhook sends data to a url for logging
- *      Added logToDB logging to checkin loop
- *      cloudIdentifyCard was not returning correct status, fixed
+ *      logToDB() which writes to a webhook, the webhook sends data to a url for logging
  *      Admin identifyCard now times out if card not presented in 15 seconds
  *      Set timezone and DST in setup() for use in logToDB()
- *      1.081 removed Amount Due from returned JSON and made Checkin msg "billing issue"
- *            added FirstName to logToDB for display use
- *      1.082 fixed bug in cloudIdentifyCard 
- *            added some db logging
- *            added custom messages to readCard function
- *      1.083 fixed bug in dblogging of allowInMessage
- *            move nfc.printhex inside of TEST ifdefs, no need to print if we're not in TEST mode
- *      1.084 moved RFID keys to include file
- *            identify card now detects previous MN format
- *            resetCard will now make an MN card "factory fresh"
- *            fixed bug in isClientOkToCheckIn where members in the renewal week were denied
- *            fixed bug in JSON back to android app
- *            changed identifyCard so app gets result faster
- *            separated cardUID test from account status test for better app messages
- *       1.09 created mnutils include file
- *            created mnrfidutils include file 
+ *      returned JSON and made Checkin msg "billing issue"
+ *      added FirstName to logToDB for display use
+ *      identify card now detects previous MN format
+ *      resetCard will now make an MN card "factory fresh"
+ *      moved all webhook callbacks to one routine
+ *      LCD shows checked in or out based on our database
+ *      second callback routine for mnlogdb... webhooks
+ * 
+ *  1.20 supports device type 4 woodshop door 
+ *       device type -1 will buzz once. use this to know you're talking to the right box
 ************************************************************************/
-#define MN_FIRMWARE_VERSION 1.09
+#define MN_FIRMWARE_VERSION 1.20
 
 // Our RFID card encryption keys
 #include "rfidkeys.h"
@@ -182,11 +140,14 @@ int led2 = D7; // This one is the built-in tiny one to the right of the USB jack
 String g_tokenResponseBuffer = "";
 String g_cibmnResponseBuffer = "";
 String g_cibcidResponseBuffer = "";
-String g_packagesResponseBuffer = "";
+String g_clientPackagesResponseBuffer = "";
 String g_queryMemberResult = ""; // JSON formatted name:value pairs.  ClientName, ClientID. Admin app will display all values.
                                  // Will also contain errorCode which app should check to be 0. See function cloudQueryMember.
 String g_identifyCardResult = ""; // JSON formatted name:value pairs. ClientName, ClientID. Admin app will display all values.
                                  // Will also contain errorCode which app should check to be 0. See function cloudIdentifyCard.
+bool g_checkInOutResponseValid = false;
+String g_checkInOutResponseBuffer = "";
+String g_checkInOutActionTaken = "";
 
 String g_recentErrors = "";
 String debug2 = "";
@@ -200,6 +161,14 @@ struct struct_authTokenCheckIn {
    String token = ""; 
    unsigned long goodUntil = 0;   // if millis() returns a value less than this, the token is valid
 } g_authTokenCheckIn;
+
+struct struct_clientPackages {
+    bool isValid = false;
+    String packagesJSON;
+} g_clientPackages;
+
+
+
 
 // ------------------   Forward declarations, when needed
 //
@@ -290,7 +259,9 @@ int cloudSetDeviceType(String data) {
 
     int deviceType = data.toInt();
 
-    if (deviceType) {
+    if (deviceType == -1) {
+        buzzerGoodBeep();
+    } else if (deviceType) {
         logToDB("DeviceTypeChange" + deviceTypeToString( (enumDeviceConfigType) deviceType),"",0,"");
         EEPROMdata.deviceType = (enumDeviceConfigType) deviceType;
         EEPROMWrite();
@@ -303,6 +274,88 @@ int cloudSetDeviceType(String data) {
 
 }
 
+//--------------- particleCallbackMNLOGDB --------------------
+// 
+// This routine  is registered with the particle cloud to receive any
+// events that begin with this device and "mnlogdb". This routine will accept
+// the callback and then call the appropriate handler.
+//
+void particleCallbackMNLOGDB (const char *event, const char *data) {
+
+   // hold off on debugEvent publishing while callback is active
+    allowDebugToPublish = false;
+
+    String eventName = String(event);
+    String myDeviceID = System.deviceID();
+    
+    // NOTE: NEVER call particle publish (incuding debugEvent) from any
+    // routine called from here. Your Particle  processor will  panic
+
+    if (eventName.indexOf(myDeviceID + "mnlogdbCheckInOut") >= 0) {
+    
+        mnlogdbCheckInOutResponse(event, data );       
+
+    } else if (eventName.indexOf(myDeviceID + "mnlogdbCheckInOutError") >= 0) {
+
+        debugEvent("mnlogdbCheckinError: " + String(data));
+
+    } else {
+
+        debugEvent("unknown particle event 2: " + String(event));
+
+    }
+
+    allowDebugToPublish = true;
+    
+}
+
+
+//--------------- particleCallbackEZF --------------------
+// 
+// This routine  is registered with the particle cloud to receive any
+// events that begin with this device and "ezf". This routine will accept
+// the callback and then call the appropriate handler.
+//
+void particleCallbackEZF (const char *event, const char *data) {
+
+    // hold off on debugEvent publishing while callback is active
+    allowDebugToPublish = false;
+
+    String eventName = String(event);
+    String myDeviceID = System.deviceID();
+    
+    // NOTE: NEVER call particle publish (incuding debugEvent) from any
+    // routine called from here. Your Particle  processor will  panic
+
+    if (eventName.indexOf(myDeviceID + "ezfCheckInToken") >= 0) {
+    
+        ezfReceiveCheckInToken(event, data );       
+
+    } else if (eventName.indexOf(myDeviceID + "ezfClientByMemberNumber") >= 0) {
+
+        ezfReceiveClientByMemberNumber(event, data );
+
+    } else if (eventName.indexOf(myDeviceID + "ezfClientByClientID") >= 0) {
+
+        ezfReceiveClientByClientID(event, data );
+
+    } else if (eventName.indexOf(myDeviceID + "ezfCheckInClient") >= 0) {
+
+        // known webhook, but we don't do anything with the return code   
+        
+    } else if (eventName.indexOf(myDeviceID + "ezfGetPackagesByClientID") >= 0) {
+
+        ezfReceivePackagesByClientID(event, data);
+
+    } else {
+
+        debugEvent("unknown particle event 1: " + String(event));
+    }
+
+    allowDebugToPublish = true;
+    
+}
+
 // ------------- Get Authorization Token ----------------
 
 int ezfGetCheckInTokenCloud (String data) {
@@ -312,8 +365,11 @@ int ezfGetCheckInTokenCloud (String data) {
     
 }
 
+// Don't call this faster than every 30 seconds, give the 
+// last call time to complete
 int ezfGetCheckInToken () {
     
+    // xxx note at all places we use millis can wrap in 70 days
     if (g_authTokenCheckIn.goodUntil < millis() ) {
         // Token is no longer good    
         g_authTokenCheckIn.token = "";
@@ -329,9 +385,11 @@ int ezfGetCheckInToken () {
 void ezfReceiveCheckInToken (const char *event, const char *data)  {
     
     // accumulate response data
-    g_tokenResponseBuffer = g_tokenResponseBuffer + String(data);
-    
-    debugEvent ("Receive CI token " + String(data) );
+    g_tokenResponseBuffer = g_tokenResponseBuffer + data;
+
+    static int partsCnt = 0;
+    partsCnt++;
+    debugEvent ("Received CI token part "+ String(partsCnt) + String(data).substring(0,15) );
     
     const int capacity = JSON_OBJECT_SIZE(8) + 2*JSON_OBJECT_SIZE(8);
     StaticJsonDocument<capacity> docJSON;
@@ -343,11 +401,11 @@ void ezfReceiveCheckInToken (const char *event, const char *data)  {
     DeserializationError err = deserializeJson(docJSON, temp );
     JSONParseError =  err.c_str();
     if (!err) {
-        //We have valid JSON, get the token
+        //We have valid full JSON response (all parts), get the token
         g_authTokenCheckIn.token = String(docJSON["access_token"].as<char*>());
         g_authTokenCheckIn.goodUntil = millis() + docJSON["expires_in"].as<int>()*1000 - 5000;   // set expiry five seconds early
         
-        debugEvent ("now " + String(millis()) + "  Good Until  " + String(g_authTokenCheckIn.goodUntil) );
+        debugEvent ("have token now " + String(millis()) + "  Good Until  " + String(g_authTokenCheckIn.goodUntil) );
    
     }
 }
@@ -474,23 +532,31 @@ int clientInfoFromJSONArray (String data) {
             JsonObject root_0 = docJSON[0];
 
             g_clientInfo.clientID = root_0["ClientID"].as<int>();
+
+            if (g_clientInfo.clientID == 0) {
+
+                g_clientInfo.firstName = "Member not found";
+                g_clientInfo.isValid = true;
+
+            } else {
             
-            g_clientInfo.contractStatus = root_0["MembershipContractStatus"].as<char*>();
-            
-            String fieldName = root_0["CustomFields"][0]["Name"].as<char*>();
-            
-            if (fieldName.indexOf("RFID Card UID") >= 0) {
-               g_clientInfo.RFIDCardKey = root_0["CustomFields"][0]["Value"].as<char*>(); 
+                g_clientInfo.contractStatus = root_0["MembershipContractStatus"].as<char*>();
+                
+                String fieldName = root_0["CustomFields"][0]["Name"].as<char*>();
+                
+                if (fieldName.indexOf("RFID Card UID") >= 0) {
+                g_clientInfo.RFIDCardKey = root_0["CustomFields"][0]["Value"].as<char*>(); 
+                }
+
+                g_clientInfo.lastName = String(root_0["LastName"].as<char*>());
+                g_clientInfo.firstName = String(root_0["FirstName"].as<char*>());
+
+                g_clientInfo.memberNumber = String(root_0["MembershipNumber"].as<char*>());
+
+                g_clientInfo.amountDue = root_0["AmountDue"]; 
+                
+                g_clientInfo.isValid = true;
             }
-
-            g_clientInfo.lastName = String(root_0["LastName"].as<char*>());
-            g_clientInfo.firstName = String(root_0["FirstName"].as<char*>());
-
-            g_clientInfo.memberNumber = String(root_0["MembershipNumber"].as<char*>());
-
-            g_clientInfo.amountDue = root_0["AmountDue"]; 
-            
-            g_clientInfo.isValid = true;
 
         }
         
@@ -503,6 +569,7 @@ int clientInfoFromJSONArray (String data) {
     }
     
 }
+
 
 
 
@@ -607,12 +674,20 @@ void ezfReceiveClientByClientID (const char *event, const char *data)  {
     clientInfoFromJSON(g_cibcidResponseBuffer);
 }
 
+
+
 // ----------------- GET PACKAGES BY CLIENT ID ---------------
 
 
-int ezfGetPackagesByClientID (String notused) {
+void clearClientPackages() {
+    g_clientPackages.isValid = false;
+    g_clientPackages.packagesJSON = "";
+}
 
-    g_packagesResponseBuffer = "";
+
+int ezfGetPackagesByClientID (int clientID) {
+
+    g_clientPackagesResponseBuffer = "";
     g_packages = "";
 
     // Create parameters in JSON to send to the webhook
@@ -620,7 +695,7 @@ int ezfGetPackagesByClientID (String notused) {
     StaticJsonDocument<capacity> docJSON;
     
     docJSON["access_token"] = g_authTokenCheckIn.token.c_str();
-    docJSON["clientID"] = String(g_clientInfo.clientID).c_str();
+    docJSON["clientID"] = clientID;
     
     char output[1000];
     serializeJson(docJSON, output);
@@ -633,22 +708,64 @@ int ezfGetPackagesByClientID (String notused) {
 
 void ezfReceivePackagesByClientID (const char *event, const char *data)  {
     
-    g_packagesResponseBuffer = g_packagesResponseBuffer + String(data);
+    g_clientPackagesResponseBuffer = g_clientPackagesResponseBuffer + String(data);
     debugEvent ("PackagesPart" + String(data));
-    
-    DynamicJsonDocument docJSON(2048);
+
+    DynamicJsonDocument docJSON(3500);
    
-    char temp[3000]; //This has to be long enough for an entire JSON response
-    strcpy_safe(temp, g_packagesResponseBuffer.c_str());
+    char temp[4000]; //This has to be long enough for an entire JSON response
+    strcpy_safe(temp, g_clientPackagesResponseBuffer.c_str());
     
     // will it parse?
     DeserializationError err = deserializeJson(docJSON, temp );
     JSONParseError =  err.c_str();
     if (!err) {
-        
-        
+        g_clientPackages.packagesJSON = g_clientPackagesResponseBuffer;
+        g_clientPackages.isValid = true;
+        g_clientPackagesResponseBuffer = "";
+
     }
         
+}
+
+// ---------- mnlogdbCheckInOut ---------------
+// call when a client is allowed in. This will call the mnlogdbCheckInOut webhook.
+// That webhook will respond to mnlogdbCheckInOutResponse
+void mnlogdbCheckInOut(int clientID, String firstName) {
+
+    g_checkInOutResponseValid = false;
+    g_checkInOutResponseBuffer = "";
+    logCheckInOut("checkin allowed","",clientID,firstName);
+
+}
+
+// -------------- mnlogdbCheckInResponse -----------
+//
+// Handles response from call to checkinout webhook
+//
+// sets global variable to say if person was checked in or checked out
+// for use by loopCheckin
+
+void mnlogdbCheckInOutResponse (const char *event, const char *data)  {
+
+    g_checkInOutResponseBuffer = g_checkInOutResponseBuffer + data;
+
+    // get content of <ActionTaken> tags
+    int tagStartPos = g_checkInOutResponseBuffer.indexOf("<ActionTaken>");
+    int valueEndPos = g_checkInOutResponseBuffer.indexOf("</ActionTaken>");
+    if ( (tagStartPos < 0) || (valueEndPos <0) ){
+        // Didn't find the tags from the php script, must not have it all yet
+
+    } else {
+
+        String actionTaken = g_checkInOutResponseBuffer.substring(tagStartPos + 13, valueEndPos );
+        //xxx debugEvent("action tag value:" + actionTaken);
+
+        // store results and return
+        g_checkInOutActionTaken = actionTaken;
+        g_checkInOutResponseValid = true;
+
+    }
 }
 
 // ----------------- CHECK IN CLIENT -------------------
@@ -781,6 +898,26 @@ String isClientOkToCheckIn (){
 
 }
 
+// ------------ isClientOkForWoodshop --------------
+//  This routine is where we check to see if we should allow
+//  the client to enter the woodshop or if we should deny them. This
+//  routine will use g_clientPackages to make the determination.
+//    
+//  Returns "" if client is good and a 16 or less character message
+//      if not. Message suitable for display to user.
+//
+String isClientOkForWoodshop (){
+
+    // Test for a good account status
+
+    if ( g_clientPackages.packagesJSON.indexOf("Wood") >= 0 ) {
+        // They have a wood package, they are good to go
+        return "";
+    }
+
+    return "Wood Not Found";
+
+}
 
 
 /*************** FUNCTIONS FOR USE IN REAL CARD READ APPLICATIONS *******************************/
@@ -805,6 +942,10 @@ String isClientOkToCheckIn (){
 //	5 = other error, see LCD panel on device
 
 int cloudQueryMember(String data ) {
+
+    // xxx after a timeout here the lcd goes to idle message. If you  call this again  with
+    // the same number then it thinks the previous data is the result and returns 2, correctly, 
+    // but  the display remains in idle  message 
 
     int queryMemberNum = data.toInt();
     if (queryMemberNum == 0){
@@ -930,7 +1071,222 @@ int cloudBurnCard(String data){
 
 }
 
+// ---------------------- LOOP FOR WOODSHOP ---------------------
+// ----------------------                  ----------------------
+// This function is called from main loop when configured for Check In station. 
+void loopWoodshopDoor() {    
+    //WoodshopLoopStates
+    enum wslState {
+        wslINIT,
+        wslWAITFORCARD, 
+        wslREQUESTTOKEN,
+        wslWAITFORTOKEN, 
+        wslASKFORCLIENTINFO, 
+        wslWAITFORCLIENTINFO,
+        wslWAITFORCLIENTPACKAGES, 
+        wslCHECKWOODSHOP, 
+        wslSHOWWOODSHOPRESULT,
+        wslERROR
+    };
+    
+    static wslState wsloopState = wslINIT;
+    static unsigned long processStartMilliseconds = 0; 
+    
+    switch (wsloopState) {
+    case wslINIT:
+        writeToLCD("Woodshop Ready"," ");
+        wsloopState = wslWAITFORCARD;
+        break;
+    case wslWAITFORCARD: {
+        digitalWrite(READY_LED,HIGH);
+        enumRetStatus retStatus = readTheCard("Badge in for","Woodshop");
+        if (retStatus == COMPLETE_OK) {
+            // move to the next step
+            wsloopState = wslREQUESTTOKEN;
+            digitalWrite(READY_LED,LOW);
+            }
+        break;
+    }
+    case wslREQUESTTOKEN: 
+        // request a good token from ezf
+        ezfGetCheckInTokenCloud("junk");
+        processStartMilliseconds = millis();
+        wsloopState = wslWAITFORTOKEN;
+        break;
 
+    case wslWAITFORTOKEN:
+        // waiting for a good token from ezf
+        if (g_authTokenCheckIn.token.length() != 0) {
+            // we have a token
+            wsloopState = wslASKFORCLIENTINFO;
+        } else {
+            // timer to limit this state
+            if (millis() - processStartMilliseconds > 15000) {
+                debugEvent("took too long to get token, checkin aborts");
+                processStartMilliseconds = 0;
+                writeToLCD("Timeout token", "Try Again");
+                buzzerBadBeep();
+                delay(2000);
+
+                // log this to DB 
+                logToDB("timeout waiting for token","",g_clientInfo.clientID,"");
+                wsloopState = wslWAITFORCARD;
+            }
+        //Otherwise we stay in this state
+        }
+        break;
+
+    case wslASKFORCLIENTINFO:  {
+
+        // ask for client details
+        ezfClientByClientID(g_cardData.clientID);
+        processStartMilliseconds = millis();
+        wsloopState = wslWAITFORCLIENTINFO;
+        break;
+        
+    }
+    case wslWAITFORCLIENTINFO: {
+  
+        if ( g_clientInfo.isValid ) {
+            // got client data, let's move on
+            processStartMilliseconds = millis();
+            ezfGetPackagesByClientID(g_cardData.clientID);
+            wsloopState = wslWAITFORCLIENTPACKAGES;
+        } else {
+            // timer to limit this state
+            if (millis() - processStartMilliseconds > 15000) {
+                debugEvent("15 second timer exeeded, checkin aborts");
+                processStartMilliseconds = 0;
+                writeToLCD("Timeout clientInfo", "Try Again");
+                buzzerBadBeep();
+                digitalWrite(REJECT_LED,HIGH);
+                delay(2000);
+                digitalWrite(REJECT_LED,LOW);
+
+                // log this to DB 
+                logToDB("timeout waiting for client info","",g_clientInfo.clientID,"");
+
+                wsloopState = wslWAITFORCARD;
+            }
+        } // Otherwise we stay in this state
+        break;
+    }
+
+    case wslWAITFORCLIENTPACKAGES: 
+        if (g_clientPackages.isValid ){
+
+            wsloopState = wslCHECKWOODSHOP;
+
+        } else {
+            // timer to limit this state
+            if (millis() - processStartMilliseconds > 15000) {
+                debugEvent("15 second timer exeeded, woodshop aborts");
+                processStartMilliseconds = 0;
+                writeToLCD("Timeout packages", "Try Again");
+                buzzerBadBeep();
+                digitalWrite(REJECT_LED,HIGH);
+                delay(2000);
+                digitalWrite(REJECT_LED,LOW);
+
+                // log this to DB 
+                logToDB("timeout waiting for client packages","",g_clientInfo.clientID,"");
+
+                wsloopState = wslWAITFORCARD;
+            }
+        } // Otherwise we stay in this state
+
+        break;
+
+    case wslCHECKWOODSHOP: {
+
+        String allowInMessage = isClientOkForWoodshop();
+        debugEvent("allowinmsg:" + allowInMessage);
+
+        if ( allowInMessage.length() > 0 ) {
+            //client account is not good for woodshop
+            writeToLCD(allowInMessage,"See Manager");
+            buzzerBadBeep();
+            digitalWrite(REJECT_LED,HIGH);
+            delay(2000);
+            digitalWrite(REJECT_LED,LOW);
+            
+            // log this to DB 
+            logToDB("Woodshop denied", allowInMessage, g_clientInfo.clientID, "");
+
+            wsloopState = wslWAITFORCARD;
+            
+        } else {
+        
+            debugEvent ("Woodshop checkin");
+            
+            // log this to our DB 
+            processStartMilliseconds = millis();
+            logToDB("Woodshop allowed", "", g_clientInfo.clientID, g_clientInfo.firstName );
+            
+            wsloopState = wslSHOWWOODSHOPRESULT;
+
+        }
+    }
+
+    case wslSHOWWOODSHOPRESULT:{
+
+        if (millis() - processStartMilliseconds > 5000) {
+            // took too long to get answer from our logging database
+            String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
+            writeToLCD("Thanks for a tap", "Woodshop Ok" );
+            digitalWrite(ADMIT_LED,HIGH);
+            buzzerGoodBeeps2();
+            delay(1000);
+            digitalWrite(ADMIT_LED,LOW);
+            debugEvent("Timeout writing to log DB - woodshop result");
+            wsloopState = wslWAITFORCARD;
+
+        } else {
+           
+            writeToLCD("Woodshop allowed", "Be Safe");
+            digitalWrite(ADMIT_LED,HIGH);
+            buzzerGoodBeeps2();
+            delay(2000);
+            digitalWrite(ADMIT_LED,LOW);
+            wsloopState = wslWAITFORCARD;
+            break;
+
+            // xxx will we do checkin/out of woodshop?
+            // we have a response from our logging database
+            //when we hear back from the logging database we know what to display
+           
+            if (g_checkInOutActionTaken.indexOf("Checked In") == 0) { 
+                String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
+                writeToLCD("Welcome","to Woodshop");
+                digitalWrite(ADMIT_LED,HIGH);
+                buzzerGoodBeeps2();
+                delay(1000);
+                digitalWrite(ADMIT_LED,LOW);
+            } else {
+                String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
+                writeToLCD("Goodbye",fullName.substring(0,15));
+                digitalWrite(ADMIT_LED,HIGH);
+                buzzerGoodBeeps3();
+                delay(1000);
+                digitalWrite(ADMIT_LED,LOW);
+            }
+            
+            wsloopState = wslWAITFORCARD;
+
+        } 
+        // just stay in this state
+        break;
+    }
+    case wslERROR:
+        break;
+
+    default:
+        break;
+    } //switch (mainloopState)
+    
+
+
+}
 
 
 
@@ -941,12 +1297,13 @@ void loopCheckIn() {
     //CheckInLoopStates
     enum cilState {
         cilINIT,
-        cilWAITFORCARD, 
+        cilWAITFORCARD, // we spend most time in this state 
         cilREQUESTTOKEN,
         cilWAITFORTOKEN, 
         cilASKFORCLIENTINFO, 
         cilWAITFORCLIENTINFO, 
         cilCHECKINGIN, 
+        cilSHOWINOROUT,  // persist the message on the display 
         cilERROR
     };
     
@@ -962,15 +1319,16 @@ void loopCheckIn() {
         digitalWrite(READY_LED,HIGH);
         enumRetStatus retStatus = readTheCard("Place card on","spot to checkin");
         if (retStatus == COMPLETE_OK) {
-            // move to the next step
+            // card was read and data obtained, move to the next step
             cilloopState = cilREQUESTTOKEN;
             digitalWrite(READY_LED,LOW);
             }
         break;
     }
     case cilREQUESTTOKEN: 
-        // request a good token from ezf
-        ezfGetCheckInTokenCloud("junk");
+        // request a good token from ezf, might already have a valid token 
+        // and this will return immediately 
+        ezfGetCheckInTokenCloud("junk"); // xxx not a cloud function
         processStartMilliseconds = millis();
         cilloopState = cilWAITFORTOKEN;
         break;
@@ -1034,7 +1392,7 @@ void loopCheckIn() {
 
         // If the client meets all critera, check them in
 
-        String cardValidMessage = isCardUIDValid();
+        String cardValidMessage = isCardUIDValid(); // check card has not been revoked
         debugEvent("cardValidmsg:" + cardValidMessage);
 
         if (cardValidMessage.length() > 0) {
@@ -1069,28 +1427,63 @@ void loopCheckIn() {
                 cilloopState = cilWAITFORCARD;
                 
             } else {
-            
+                // all looks good, checkin to ezfacility
                 debugEvent ("SM: now checkin client");
-                // tell EZF to check someone in
+                // tell EZF to check someone in 
+                // xxx should we only do this on a checkin, not a checkout?
                 ezfCheckInClient(String(g_clientInfo.clientID));
+                
+                // log this to our DB 
+                processStartMilliseconds = millis();
+                // call our DB and find out if this is checkin or checkout 
+                mnlogdbCheckInOut(g_clientInfo.clientID,g_clientInfo.firstName );
+                
+                cilloopState = cilSHOWINOROUT;
 
+            }
+        }
+    }
+    case cilSHOWINOROUT:{
+
+        if (millis() - processStartMilliseconds > 5000) {
+            // took too long to get answer from our logging database
+            String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
+            writeToLCD("Thanks for a tap",fullName.substring(0,15) );
+            digitalWrite(ADMIT_LED,HIGH);
+            buzzerGoodBeeps2();
+            delay(1000);
+            digitalWrite(ADMIT_LED,LOW);
+            debugEvent("Timeout looking for action tag");
+            cilloopState = cilWAITFORCARD;
+
+        } else if (g_checkInOutResponseValid) {
+            // we have a response from our logging database
+            //when we hear back from the logging database we know what to display
+            if (g_checkInOutActionTaken.indexOf("Checked In") == 0){ 
                 String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
                 writeToLCD("Welcome",fullName.substring(0,15));
                 digitalWrite(ADMIT_LED,HIGH);
                 buzzerGoodBeeps2();
                 delay(1000);
                 digitalWrite(ADMIT_LED,LOW);
-                
-                // log this to DB 
-                logToDB("checkin allowed","",g_clientInfo.clientID,g_clientInfo.firstName);
-                
-                cilloopState = cilWAITFORCARD;
+            } else {
+                String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
+                writeToLCD("Goodbye",fullName.substring(0,15));
+                digitalWrite(ADMIT_LED,HIGH);
+                buzzerGoodBeeps3();
+                delay(1000);
+                digitalWrite(ADMIT_LED,LOW);
+            }
             
-                }
+            cilloopState = cilWAITFORCARD;
+        } else {
+            // just stay in this state
         }
+        break;
     }
     case cilERROR:
         break;
+
     default:
         break;
     } //switch (mainloopState)
@@ -1154,6 +1547,8 @@ enum idcState {
                 writeToLCD("Card read fail",g_cardData.cardStatus);
                 g_identifyCardResult = clientInfoToJSON(1,"Card read failed",true);
                 idcState = idcCLEANUP;
+            } else {
+                //remain in this state
             }
         }
         break;
@@ -1328,7 +1723,7 @@ void adminGetUserInfo(int clientID, String memberNumber) {
         g_queryMemberResult = clientInfoToJSON(0, "OK", false);
 
         String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
-        writeToLCD("Selected",fullName.substring(0,15));
+        writeToLCD("Selected:",fullName.substring(0,16));
 
         processStartMilliseconds = millis();
         guiState = guiDISPLAYINGINFO;
@@ -1339,7 +1734,8 @@ void adminGetUserInfo(int clientID, String memberNumber) {
 
     case guiDISPLAYINGINFO:
         if ((millis() - processStartMilliseconds > 15000) || !g_clientInfo.isValid) {
-            // either the burn completed and cleared clientInfo or we've waited too long for a burn
+            // either the burn completed and cleared clientInfo or we've waited 
+            // too long for a burn
             guiState = guiCLEANUP;
         }
         //stay in this state
@@ -1349,7 +1745,7 @@ void adminGetUserInfo(int clientID, String memberNumber) {
         writeToLCD(" ", " ");
         g_adminCommandData = "";
         g_adminCommand = acIDLE;
-        guiState = guiIDLE;
+        guiState = guiIDLE; // xxx
         break;
 
     default:
@@ -1365,10 +1761,13 @@ void adminGetUserInfo(int clientID, String memberNumber) {
 //
 void loopAdmin() {
 
-    static bool init = true;
+    // the loop state is in g_adminCommand and not here
+    // because the state is set by calls from the admin app on Android device
+
+    static bool init = true; // xxx make an init state
     static bool LCDSaysIdle = false;
 
-    if (init) {
+    if (init) {  // xxx change to an init state
         init = false;
         writeToLCD("Admin Idle", " ");
     }
@@ -1492,6 +1891,7 @@ void setup() {
     //Particle.variable ("RFIDCardKey", g_clientInfo.RFIDCardKey);
     //Particle.variable ("g_Packages",g_packages);
     //success = Particle.function("GetCheckInToken", ezfGetCheckInTokenCloud);
+    // xxx
     //Particle.variable ("debug2", debug2);
     //Particle.variable ("debug3", debug3);
     //Particle.variable ("debug4", debug4);
@@ -1500,15 +1900,15 @@ void setup() {
  
     // Used by all device types
     success = Particle.function("SetDeviceType", cloudSetDeviceType);
+    // xxx limit of 4 handlers??? Particle.subscribe(System.deviceID() + "RFIDLoggingReturn", RFIDLoggingReturn, MY_DEVICES);
 
     // Used to test CheckIn
     success = Particle.function("RFIDCardRead", cloudRFIDCardRead);
 
-    // Needed for Checkin
-    Particle.subscribe(System.deviceID() + "ezfCheckInToken", ezfReceiveCheckInToken, MY_DEVICES);
-    Particle.subscribe(System.deviceID() + "ezfClientByMemberNumber", ezfReceiveClientByMemberNumber, MY_DEVICES);
-    Particle.subscribe(System.deviceID() + "ezfClientByClientID", ezfReceiveClientByClientID, MY_DEVICES);
-    Particle.subscribe(System.deviceID() + "RFIDKeys", responseRFIDKeys, MY_DEVICES);
+    // Needed for all devices
+    Particle.subscribe(System.deviceID() + "ezf",particleCallbackEZF, MY_DEVICES);
+    Particle.subscribe(System.deviceID() + "mnlogdb",particleCallbackMNLOGDB, MY_DEVICES);
+
 
     // Used by device types for machine usage permission validation
     //success = Particle.function("PackagesByClientID",ezfGetPackagesByClientID);
@@ -1536,30 +1936,10 @@ void setup() {
     digitalWrite(ADMIT_LED,LOW);
     digitalWrite(REJECT_LED,LOW);
 
-
-    // Get the RFID secret keys 
-    writeToLCD("Requesting RFID", "Keys");
     g_secretKeysValid = false;
-    //Particle.publish("RFIDKeys", "junk1", PRIVATE);
-    unsigned long processStartMilliseconds = millis();
 
-// xxx responseRFIDKeys debugging since we are not getting called back from the webhook for some reason...
     //RFIDKeysJSON from include file
-    //responseRFIDKeys("junk", "{\"WriteKey\":[160,161,162,163,164,165],\"ReadKey\":[176,177,178,179,180,181] }");
-    responseRFIDKeys("junk", RFIDKeysJSON);
-
-    while (!g_secretKeysValid) {
-        Particle.process();
-        if (millis() - processStartMilliseconds > 15000) {
-            debugEvent("took too long to get RFID Keys, init fails, all stop.");
-            writeToLCD("Timeout on Keys", "fatal error");
-            buzzerBadBeep();
-            while (true) {Particle.process();}  // Just get stuck here. Without the RFID keys we can't do anything.
-        }
-    }
-    //we have the keys
-    writeToLCD(" "," ");
-    
+    responseRFIDKeys("junk", RFIDKeysJSON); //xxx remove parameter
 
     // Signal ready to go
     writeToLCD(deviceTypeToString(EEPROMdata.deviceType),"ver. " + String(MN_FIRMWARE_VERSION));
@@ -1592,7 +1972,7 @@ void loop() {
     switch (mainloopState) {
     
     case mlsASKFORTOKEN: 
-        ezfGetCheckInToken();
+        ezfGetCheckInToken();  // This is non blocking, call it to preemptively get a token 
         mainloopState = mlsDEVICELOOP; // initialization is over
         break;
 
@@ -1610,7 +1990,14 @@ void loop() {
         case ADMIN_DEVICE:
             loopAdmin();
             break;
+        case WOODSHOP:
+            loopWoodshopDoor();
+            break;
         default:
+            // checking for individual machines in the loopStation routine
+            //if (EEPROMdata.deviceType > 100) {
+            //    loopStation(EEPROMdata.deviceType);
+            //}
             break;
         }
         break;
@@ -1623,7 +2010,7 @@ void loop() {
         break;
     }
     
-    heartbeatLEDs();
+    heartbeatLEDs(); // heartbead on D7 LED 
 
     debugEvent("");  // need this to pump the debug event process
 }
