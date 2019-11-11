@@ -62,7 +62,7 @@ file.
     "rejectUnauthorized": true,
     "responseTemplate": "",
     "headers": {
-        "Authorization": "Basic 4dd79960%3A557bac0def4e31691a38c3e927e409ad",
+        "Authorization": "Basic NGRkNzk5NjA6NTU3YmFjMGRlZjRlMzE2OTFhMzhjM2U5MjdlNDA5YWQ=",
         "Content-type": "application/x-www-form-urlencoded",
         "Accept": "application/json"
     },
