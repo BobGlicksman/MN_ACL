@@ -7,7 +7,17 @@ file.
 
 {
     "event": "RFIDLogging",
-    "url": "http://rfid.makernexuswiki.com/rfidcheckin.php",
+    "url": "http://rfidsandbox.makernexuswiki.com/rfidcheckin.php",
+    "requestType": "POST",
+    "noDefaults": false,
+    "rejectUnauthorized": false
+}
+
+{
+    "event": "RFIDLogCheckInOut",
+    "responseTopic": "{{PARTICLE_DEVICE_ID}}mnlogdbCheckInOut",
+    "errorResponseTopic": "{{PARTICLE_DEVICE_ID}}mnlogdbCheckInOutError",
+    "url": "http://rfidsandbox.makernexuswiki.com/rfidcheckinout.php",
     "requestType": "POST",
     "noDefaults": false,
     "rejectUnauthorized": false
@@ -16,7 +26,7 @@ file.
 {
     "event": "ezfClientByMemberNumber",
     "responseTopic": "{{PARTICLE_DEVICE_ID}}ezfClientByMemberNumber",
-    "url": "https://api.ezfacility.com/v2/clients/membershipNumber={{{memberNumber}}}",
+    "url": "https://api.sandbox.ezfacility.com/v2/clients/membershipNumber={{{memberNumber}}}",
     "requestType": "GET",
     "noDefaults": true,
     "rejectUnauthorized": true,
@@ -31,7 +41,7 @@ file.
 {
     "event": "ezfClientByClientID",
     "responseTopic": "{{PARTICLE_DEVICE_ID}}ezfClientByClientID",
-    "url": "https://api.ezfacility.com/v2/clients/{{{clientID}}}",
+    "url": "https://api.sandbox.ezfacility.com/v2/clients/{{{clientID}}}",
     "requestType": "GET",
     "noDefaults": true,
     "rejectUnauthorized": true,
@@ -46,34 +56,21 @@ file.
     "event": "ezfCheckInToken",
     "responseTopic": "{{PARTICLE_DEVICE_ID}}ezfCheckInToken",
     "errorResponseTopic": "",
-    "url": "https://api.ezfacility.com/token",
+    "url": "https://api.sandbox.ezfacility.com/token",
     "requestType": "POST",
     "noDefaults": true,
     "rejectUnauthorized": true,
     "responseTemplate": "",
     "headers": {
-        "Authorization": "Basic YOUR AUTH STRING HERE",
+        "Authorization": "Basic 1d0ba0c5%3A4b0cd2cd694e7360bd6e70df225037e6",
         "Content-type": "application/x-www-form-urlencoded",
         "Accept": "application/json"
     },
     "form": {
         "grant_type": "password",
-        "username": "YOUR USER",
-        "password": "YOUR PASSWORD",
+        "username": "makernexusdev",
+        "password": "makernexusdev1",
         "scope": "realm:tms"
-    }
-}
-
-{
-    "event": "ezfGetStationList",
-    "responseTopic": "{{PARTICLE_DEVICE_ID}}ezfGetStationList",
-    "url": "https://api.ezfacility.com/v2/checkins/stations",
-    "requestType": "GET",
-    "noDefaults": true,
-    "rejectUnauthorized": true,
-    "headers": {
-        "Authorization": "Bearer {{{PARTICLE_EVENT_VALUE}}}",
-        "Accept": "application/json"
     }
 }
 
@@ -81,7 +78,7 @@ file.
 {
     "event": "ezfGetPackagesByClientID",
     "responseTopic": "{{PARTICLE_DEVICE_ID}}ezfGetPackagesByClientID",
-    "url": "https://api.ezfacility.com/v2/packages/clientID={{{clientID}}}",
+    "url": "https://api.sandbox.ezfacility.com/v2/packages/clientID={{{clientID}}}",
     "requestType": "GET",
     "noDefaults": true,
     "rejectUnauthorized": true,
@@ -94,22 +91,9 @@ file.
 
 
 {
-    "event": "RFIDKeys",
-    "responseTopic": "{{PARTICLE_DEVICE_ID}}RFIDKeys",
-    "url": "https://postman-echo.com/get",
-    "requestType": "GET",
-    "noDefaults": true,
-    "rejectUnauthorized": false,
-    "responseTemplate": "{\"WriteKey\":[0,0,0,0,0,0],\"ReadKey\":[0,0,0,0,0,0] }",
-    "query": {
-        "junk": "junk"
-    }
-}
-
-{
     "event": "ezfCheckInClient",
     "responseTopic": "{{PARTICLE_DEVICE_ID}}ezfCheckInClient",
-    "url": "https://api.ezfacility.com/v2/checkins/clientID/{{{clientID}}}",
+    "url": "https://api.sandbox.ezfacility.com/v2/checkins/clientID/{{{clientID}}}",
     "requestType": "POST",
     "noDefaults": true,
     "rejectUnauthorized": true,
