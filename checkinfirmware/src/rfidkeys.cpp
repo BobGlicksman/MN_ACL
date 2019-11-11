@@ -8,4 +8,4 @@
 //
 #include "application.h"
 
-String RFIDKeysJSON = "{\"WriteKey\":YOUR WRITE KEY,\"ReadKey\":YOUR READ KEY }";
+String RFIDKeysJSON = "{\"WriteKey\":[100,101,102,103,104,105],\"ReadKey\":[200,201,202,203,205,205] }";

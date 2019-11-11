@@ -1,0 +1,5 @@
+{
+    "particle.targetDevice": "mn_jim",
+    "particle.firmwareVersion": "1.4.2",
+    "particle.targetPlatform": "argon"
+}
