@@ -117,6 +117,7 @@
  * 
  *  1.20 supports device type 4 woodshop door 
  *       device type -1 will buzz once. use this to know you're talking to the right box
+ *       Fixed issue #15 where bad cards got denied and ok messages
 ************************************************************************/
 #define MN_FIRMWARE_VERSION 1.20
 
@@ -705,15 +706,21 @@ int ezfGetPackagesByClientID (int clientID) {
     return rtnCode;
 }
 
-
+char temp[12000]; //This has to be long enough for an entire JSON response
 void ezfReceivePackagesByClientID (const char *event, const char *data)  {
     
-    g_clientPackagesResponseBuffer = g_clientPackagesResponseBuffer + String(data);
-    debugEvent ("PackagesPart" + String(data));
+    static int partCnt = 0;
+    if (g_clientPackagesResponseBuffer.length() == 0) {
+        partCnt = 0;
+    }
+    partCnt++;
 
-    DynamicJsonDocument docJSON(3500);
+    g_clientPackagesResponseBuffer = g_clientPackagesResponseBuffer + String(data);
+    debugEvent ("PackagesPart " + String(partCnt) + ": " + String(data));
+
+    DynamicJsonDocument docJSON(5000);
    
-    char temp[4000]; //This has to be long enough for an entire JSON response
+   
     strcpy_safe(temp, g_clientPackagesResponseBuffer.c_str());
     
     // will it parse?
@@ -910,7 +917,7 @@ String isClientOkForWoodshop (){
 
     // Test for a good account status
 
-    if ( g_clientPackages.packagesJSON.indexOf("Wood") >= 0 ) {
+    if ( g_clientPackages.packagesJSON.indexOf("Wood") > 0 ) {
         // They have a wood package, they are good to go
         return "";
     }
@@ -1155,7 +1162,7 @@ void loopWoodshopDoor() {
         } else {
             // timer to limit this state
             if (millis() - processStartMilliseconds > 15000) {
-                debugEvent("15 second timer exeeded, checkin aborts");
+                debugEvent("15 second timer exeeded, clientinfo woodshop aborts");
                 processStartMilliseconds = 0;
                 writeToLCD("Timeout clientInfo", "Try Again");
                 buzzerBadBeep();
@@ -1179,8 +1186,8 @@ void loopWoodshopDoor() {
 
         } else {
             // timer to limit this state
-            if (millis() - processStartMilliseconds > 15000) {
-                debugEvent("15 second timer exeeded, woodshop aborts");
+            if (millis() - processStartMilliseconds > 30000) {
+                debugEvent("15 second timer exeeded for packages, woodshop aborts");
                 processStartMilliseconds = 0;
                 writeToLCD("Timeout packages", "Try Again");
                 buzzerBadBeep();
@@ -1226,7 +1233,8 @@ void loopWoodshopDoor() {
             wsloopState = wslSHOWWOODSHOPRESULT;
 
         }
-    }
+        break;
+    } 
 
     case wslSHOWWOODSHOPRESULT:{
 
@@ -1442,6 +1450,7 @@ void loopCheckIn() {
 
             }
         }
+        break;
     }
     case cilSHOWINOROUT:{
 
