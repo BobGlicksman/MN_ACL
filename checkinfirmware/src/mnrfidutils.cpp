@@ -541,12 +541,15 @@ uint8_t testCard() {
 // ------------------ ReadCard ---------------
 //
 // Called from main loop to see if card is presented and readable.
+//
+// Params
+//      msg1 and msg2 are displayed on the LCD while waiting for the
+//          user to present their card
 // 
 // When this routine returns COMPLETE_OK the g_cardData should be 
 // set, in particular if .clientID is not 0 then the main loop will
-// try to checkin this client
+// assume g_cardData is good and try to checkin this client
 //
-
 enumRetStatus readTheCard(String msg1, String msg2) {
 
     enumRetStatus returnStatus = IN_PROCESS;
@@ -697,8 +700,10 @@ enumRetStatus readTheCard(String msg1, String msg2) {
     
 }
 
-
+// ------- resetCardToFreshNow ----
+//
 // If the card can be read with the current or old MN card, reset it to factory fresh format
+//
 void resetCardToFreshNow() {
 
     Serial.println("waiting for ISO14443A card to be presented to the reader ...");
@@ -787,7 +792,13 @@ void resetCardToFreshNow() {
 
 }
 
-
+// -------- burnCardNow ---------
+// Called to create a new card in MN format.
+//
+// Params: 
+//    clientID - As found in EZFacility for the user
+//    cardUID - Ad found in the custom field in EZFacility for this client
+//
 void burnCardNow(int clientID, String cardUID) {
     // burn baby burn!
     // All this needs to happen in 10 seconds or the cloud function will time out
@@ -807,7 +818,7 @@ void burnCardNow(int clientID, String cardUID) {
             delay(500);
             g_adminCommand = acIDLE;
             g_adminCommandData = "";
-            return;
+            return; // xxx
         }
     }
     
@@ -827,7 +838,7 @@ void burnCardNow(int clientID, String cardUID) {
             g_adminCommandData = "";
             return;
         }
-    } else if (cardType == 1) {
+    } else if (cardType == 1) {  // xxx should we have enum
         Serial.println("Maker Nexus formatted\n");        
     } else {
         Serial.println("other\n");
