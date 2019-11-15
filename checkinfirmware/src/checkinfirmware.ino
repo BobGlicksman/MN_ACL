@@ -117,6 +117,7 @@
  * 
  *  1.20 supports device type 4 woodshop door 
  *       device type -1 will buzz once. use this to know you're talking to the right box
+ *       Fixed issue #15 where bad cards got denied and ok messages
 ************************************************************************/
 #define MN_FIRMWARE_VERSION 1.20
 
@@ -208,8 +209,10 @@ char * strcat_safe( const char *str1, const char *str2 )
 }  
 
 
-
+// ------------- firmwareupdatehandler
 // Called by Particle OS when a firmware update is about to begin
+//
+// Will put a message on the LCD screen and turn on the red LED
 void firmwareupdatehandler(system_event_t event, int data) {
     switch (data) {
     case firmware_update_begin:
@@ -227,7 +230,14 @@ void firmwareupdatehandler(system_event_t event, int data) {
     }
 }
 
-
+/***************
+ * heartbeatLEDs
+ * 
+ * Called from Loop() 
+ * 
+ * Will heartbeat the D7 LED so we can tell that our code is alive
+ * 
+ */
 void heartbeatLEDs() {
     
     static unsigned long lastBlinkTimeD7 = 0;
@@ -358,12 +368,28 @@ void particleCallbackEZF (const char *event, const char *data) {
 
 // ------------- Get Authorization Token ----------------
 
+// ezfGetCheckInTokenCloud
+// 
+//   A debug routine to call from Particle Console to get a token.
+//
 int ezfGetCheckInTokenCloud (String data) {
     
     ezfGetCheckInToken();
     return 0;
     
 }
+
+/**
+ * ezfGetCheckInToken
+ * 
+ * Called to make sure g_authTokenCheckIn is valid.
+ * If the token is still valid, this routine does nothing.
+ * If the token has expired (or was never initialized) then this starts 
+ * the process by calling the webhook ezfCheckInToken.
+ * 
+ * Caller should check length of g_authTokenCheckIn. If > 0 after calling this
+ * routine, then the token is valid.
+*/
 
 // Don't call this faster than every 30 seconds, give the 
 // last call time to complete
@@ -382,6 +408,14 @@ int ezfGetCheckInToken () {
     
 }
 
+/********
+ * ezfReceiveCheckInToken
+ * 
+ * Called from particleCallbackEZF
+ * Accumulates the responses until a valid JSON is found
+ * Puts results in g_authTokenCheckIn
+ * 
+*/
 void ezfReceiveCheckInToken (const char *event, const char *data)  {
     
     // accumulate response data
@@ -414,9 +448,19 @@ void ezfReceiveCheckInToken (const char *event, const char *data)  {
 
 // ------------ ClientInfo Utility Functions -------------------
 
-
-
-// format g_clientInfo into JSON 
+/*********
+ * clientInfoToJSON
+ * 
+ * Creates a JSON package based on the values in g_clientInfo and g_cardData
+ * Includes any passed in error code and message.
+ * 
+ * parameters
+ *      errCode / errMsg  - get put into JSON
+ *      includeCardData - if true, g_cardData information is included
+ * 
+ * Returns JSON string
+*/
+ 
 String clientInfoToJSON(int errCode, String errMsg, bool includeCardData){
 
     const size_t capacity = JSON_OBJECT_SIZE(15);
@@ -452,8 +496,10 @@ String clientInfoToJSON(int errCode, String errMsg, bool includeCardData){
 
 }
 
-// Parse the client JSON from EZF to load g_clientInfo
-// The EZF get client info by client id does not return an array.
+/********************************/
+// clientInfoFromJSON
+//   Parse the client JSON from EZF to load g_clientInfo
+//   The EZF get client info by client ID does not return an array.
 int clientInfoFromJSON(String data){
 
 const size_t capacity = 3*JSON_ARRAY_SIZE(2) + 2*JSON_ARRAY_SIZE(3) + 10*JSON_OBJECT_SIZE(2) + JSON_OBJECT_SIZE(20) + 1050;
@@ -497,9 +543,12 @@ const size_t capacity = 3*JSON_ARRAY_SIZE(2) + 2*JSON_ARRAY_SIZE(3) + 10*JSON_OB
     }
 }
 
-// Parse the client JSON array from EZF to load g_clientInfo
-// Member Number is now supposed to be unique but the get API by memberNumber
-// still returns an array.
+/**************************/
+// clientInfoFromJSONArray
+//   Parse the client JSON array from EZF to load g_clientInfo
+//   Member Number is now supposed to be unique but the get API by memberNumber
+//   still returns an array.
+//
 int clientInfoFromJSONArray (String data) {
     
     // try to parse it. Return 1 if fails, else load g_clientInfo and return 0.
@@ -577,6 +626,19 @@ int clientInfoFromJSONArray (String data) {
 
 // ------------- Get Client Info by MemberNumber ----------------
 
+/**********************
+ * ezfClientByMemberNumber
+ *  
+ * parameters
+ *    data - numeric string of member number as found in EZFacility
+ * 
+ * Returns the member number passed in
+ * 
+ * Creates JSON for memberNumber and calls ezfClientByMemberNumber web hook
+ * 
+ * Caller should wait for particleCallbackEZF()
+ * 
+*/
 int ezfClientByMemberNumber (String data) {
     
     // if a value is passed in, set g_memberNumber
@@ -606,7 +668,11 @@ int ezfClientByMemberNumber (String data) {
     return g_clientInfo.memberNumber.toInt();
 }
 
-
+/**********************
+ * ezfReceiveClientByMemberNumber
+ * 
+ * called by particleCallbackEZF()
+*/
 void ezfReceiveClientByMemberNumber (const char *event, const char *data)  {
     
     g_cibmnResponseBuffer = g_cibmnResponseBuffer + String(data);
@@ -619,6 +685,17 @@ void ezfReceiveClientByMemberNumber (const char *event, const char *data)  {
 
 
 // ------------- Get Client Info by ClientID ----------------
+// Called by the Particle Console for debug use.
+// 
+// parameters
+//   Data is a numeric string of client ID.
+//
+// This routine will call ezfClientByClientID to fire off the webhook.
+//
+// Caller should wait for particleCallbackEZF() to get a response
+// When called from Particle Console the result will eventually show up 
+// in the variable ClientInfo
+//
 int ezfClientByClientIDCloud (String data) {
     
     // if a value is passed in, set g_memberNumber
@@ -642,7 +719,11 @@ int ezfClientByClientIDCloud (String data) {
     
 }
 
-
+/*****************************
+ * ezfClientByClientID
+ * 
+ * Called by particleCallbackEZF()
+ */
 int ezfClientByClientID (int clientID) {
     
     g_cibcidResponseBuffer = "";  // reset last answer
@@ -664,8 +745,11 @@ int ezfClientByClientID (int clientID) {
     return 0;
 }
 
-
-
+/*****************************
+ * ezfReceiveClientByClientID
+ * 
+ * Called by particleCallbackEZF()
+ */
 void ezfReceiveClientByClientID (const char *event, const char *data)  {
     
     g_cibcidResponseBuffer = g_cibcidResponseBuffer + String(data);
@@ -678,13 +762,19 @@ void ezfReceiveClientByClientID (const char *event, const char *data)  {
 
 // ----------------- GET PACKAGES BY CLIENT ID ---------------
 
-
+// clearClientPackages
+//   called to reset g_clientPackages to initial state
 void clearClientPackages() {
     g_clientPackages.isValid = false;
     g_clientPackages.packagesJSON = "";
 }
 
-
+// ezfGetPackagesByClientID
+//    Creates a JSON package for clientID and triggers the webhook
+//    ezfGetPackagesByClientID
+// 
+//    After calling, wait for response to come in via particleCallbackEZF()
+//
 int ezfGetPackagesByClientID (int clientID) {
 
     g_clientPackagesResponseBuffer = "";
@@ -705,15 +795,31 @@ int ezfGetPackagesByClientID (int clientID) {
     return rtnCode;
 }
 
+/*****************************************
+ * ezfReceivePackagesByClientID
+ * 
+ * Called from particleCallbackEZF() when it gets a response from
+ * the get packages webhook. 
+ * 
+ * This function accumulates the response packages until it finds that
+ * the JSON can be parsed. Then it puts the JSON in g_clientPackages.
+*/
 
+char temp[12000]; //This has to be long enough for an entire JSON response
 void ezfReceivePackagesByClientID (const char *event, const char *data)  {
     
-    g_clientPackagesResponseBuffer = g_clientPackagesResponseBuffer + String(data);
-    debugEvent ("PackagesPart" + String(data));
+    static int partCnt = 0;
+    if (g_clientPackagesResponseBuffer.length() == 0) {
+        partCnt = 0;
+    }
+    partCnt++;
 
-    DynamicJsonDocument docJSON(3500);
+    g_clientPackagesResponseBuffer = g_clientPackagesResponseBuffer + String(data);
+    debugEvent ("PackagesPart " + String(partCnt) + ": " + String(data));
+
+    DynamicJsonDocument docJSON(5000);
    
-    char temp[4000]; //This has to be long enough for an entire JSON response
+   
     strcpy_safe(temp, g_clientPackagesResponseBuffer.c_str());
     
     // will it parse?
@@ -729,8 +835,15 @@ void ezfReceivePackagesByClientID (const char *event, const char *data)  {
 }
 
 // ---------- mnlogdbCheckInOut ---------------
+//
 // call when a client is allowed in. This will call the mnlogdbCheckInOut webhook.
-// That webhook will respond to mnlogdbCheckInOutResponse
+//
+// params 
+//    clientID that is going to be checking in or out
+//    firstName  that will be displayed on the "checked in" web page
+//
+// Wait for response to particleCallbackMNLOGDB()
+//
 void mnlogdbCheckInOut(int clientID, String firstName) {
 
     g_checkInOutResponseValid = false;
@@ -741,11 +854,13 @@ void mnlogdbCheckInOut(int clientID, String firstName) {
 
 // -------------- mnlogdbCheckInResponse -----------
 //
+// Called by particleCallbackMNLOGDB()
+//
 // Handles response from call to checkinout webhook
 //
 // sets global variable to say if person was checked in or checked out
 // for use by loopCheckin
-
+//
 void mnlogdbCheckInOutResponse (const char *event, const char *data)  {
 
     g_checkInOutResponseBuffer = g_checkInOutResponseBuffer + data;
@@ -768,7 +883,12 @@ void mnlogdbCheckInOutResponse (const char *event, const char *data)  {
     }
 }
 
-// ----------------- CHECK IN CLIENT -------------------
+// ----------------- ezfCheckInClient -------------------
+// 
+// Constructs a JSON for clientID and calls particle webhook ezfCheckInClient
+//
+// After calling wait for callback to particleCallbackEZF()
+//
 int ezfCheckInClient(String clientID) {
     
      // Create parameters in JSON to send to the webhook
@@ -790,9 +910,10 @@ int ezfCheckInClient(String clientID) {
 
 // ------------------- CLOUD TESTING CALLS ----------------
 
+
+// -------- cloudRFIDCardRead -------
 // Called to simulate a card read. 
 // Pass in: clientID,cardUID
-
 int cloudRFIDCardRead (String data) {
     
     int commaLocation = data.indexOf(",");
@@ -910,7 +1031,7 @@ String isClientOkForWoodshop (){
 
     // Test for a good account status
 
-    if ( g_clientPackages.packagesJSON.indexOf("Wood") >= 0 ) {
+    if ( g_clientPackages.packagesJSON.indexOf("Wood") > 0 ) {
         // They have a wood package, they are good to go
         return "";
     }
@@ -940,7 +1061,6 @@ String isClientOkForWoodshop (){
 //	3 = query was already underway, this query is rejected
 //	4 = memberNumber was not a number or was 0
 //	5 = other error, see LCD panel on device
-
 int cloudQueryMember(String data ) {
 
     // xxx after a timeout here the lcd goes to idle message. If you  call this again  with
@@ -993,6 +1113,7 @@ int cloudQueryMember(String data ) {
 // continues to call as long as status 1 is returned.
 // Status 2 indicates that data is now ready in the cloud variable cardInfo 
 // Status 3 indicates an error 
+//
 int cloudIdentifyCard (String data) {
     
     static bool haveReturnedADoneStatus = false;
@@ -1052,7 +1173,6 @@ int cloudResetCardToFresh(String data) {
 //	    1 = error contacting the hardwarebad card; burn unsuccessful
 //	    2 = clientID does not match clientID from last queryMember call
 //      3 = data is not a number or is 0
-
 int cloudBurnCard(String data){
 
     int clientID = data.toInt();
@@ -1074,6 +1194,7 @@ int cloudBurnCard(String data){
 // ---------------------- LOOP FOR WOODSHOP ---------------------
 // ----------------------                  ----------------------
 // This function is called from main loop when configured for Check In station. 
+//
 void loopWoodshopDoor() {    
     //WoodshopLoopStates
     enum wslState {
@@ -1155,7 +1276,7 @@ void loopWoodshopDoor() {
         } else {
             // timer to limit this state
             if (millis() - processStartMilliseconds > 15000) {
-                debugEvent("15 second timer exeeded, checkin aborts");
+                debugEvent("15 second timer exeeded, clientinfo woodshop aborts");
                 processStartMilliseconds = 0;
                 writeToLCD("Timeout clientInfo", "Try Again");
                 buzzerBadBeep();
@@ -1179,8 +1300,8 @@ void loopWoodshopDoor() {
 
         } else {
             // timer to limit this state
-            if (millis() - processStartMilliseconds > 15000) {
-                debugEvent("15 second timer exeeded, woodshop aborts");
+            if (millis() - processStartMilliseconds > 30000) {
+                debugEvent("15 second timer exeeded for packages, woodshop aborts");
                 processStartMilliseconds = 0;
                 writeToLCD("Timeout packages", "Try Again");
                 buzzerBadBeep();
@@ -1226,7 +1347,8 @@ void loopWoodshopDoor() {
             wsloopState = wslSHOWWOODSHOPRESULT;
 
         }
-    }
+        break;
+    } 
 
     case wslSHOWWOODSHOPRESULT:{
 
@@ -1442,6 +1564,7 @@ void loopCheckIn() {
 
             }
         }
+        break;
     }
     case cilSHOWINOROUT:{
 
@@ -1622,24 +1745,24 @@ enum idcState {
 }
 
 
-
-// adminGetUserInfo
-//
-// Called from admin loop when admin command is acGETUSERINFO (cloudQueryMember)
-//
-// parameters
-//    if both parameters are set, only clientID will be used 
-//    to use memberNumber, pass in clientID = 0
-//
-// calls CRM for the user data and formats it as JSON
-// for the admin client to get via particle cloud.
-// JSON has at least clientID, name but can have more fields.
-// JSON also has errorCode of:
-//	0 = member found and membership data is in the JSON
-//	2 = member not found in EZFacility
-//	3 = more than one member found in EZfacility
-//	4 = other error.
-
+/*********************************************
+ * 
+ * adminGetUserInfo
+ * Called from admin loop when admin command is acGETUSERINFO (cloudQueryMember)
+ *
+ * parameters
+ *    if both parameters are set, only clientID will be used 
+ *    to use memberNumber, pass in clientID = 0
+ *
+ * calls CRM for the user data and formats it as JSON
+ * for the admin client to get via particle cloud.
+ * JSON has at least clientID, name but can have more fields.
+ * JSON also has errorCode of:
+ *	0 = member found and membership data is in the JSON
+ *	2 = member not found in EZFacility
+ *	3 = more than one member found in EZfacility
+ *	4 = other error.
+*/
 void adminGetUserInfo(int clientID, String memberNumber) {
     enum guiState {
         guiINIT,
