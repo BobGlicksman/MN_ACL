@@ -779,6 +779,7 @@ int ezfGetPackagesByClientID (int clientID) {
 
     g_clientPackagesResponseBuffer = "";
     g_packages = "";
+    clearClientPackages();
 
     // Create parameters in JSON to send to the webhook
     const int capacity = JSON_OBJECT_SIZE(8) + 2*JSON_OBJECT_SIZE(8);
@@ -1371,7 +1372,7 @@ void loopWoodshopDoor() {
             delay(2000);
             digitalWrite(ADMIT_LED,LOW);
             wsloopState = wslWAITFORCARD;
-            break;
+            break; // xxx
 
             // xxx will we do checkin/out of woodshop?
             // we have a response from our logging database
