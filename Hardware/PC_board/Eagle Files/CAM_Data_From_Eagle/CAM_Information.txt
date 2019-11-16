@@ -9,7 +9,7 @@ via DHL International.
 The CAM files will likely work with other manufacturers as well, but
 he have not tried them.  We obtained high quality PCBs from OSHPark
 by uploading the Eagle .brd file to their site.  The board design
-is public on the OSGPark site and you can order from there, but the
+is public on the OSHPark site and you can order from there, but the
 price is higher than from JLCPCB.
 
 Team Practical Projects
