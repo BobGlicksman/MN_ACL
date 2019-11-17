@@ -118,6 +118,7 @@
  *  1.20 supports device type 4 woodshop door 
  *       device type -1 will buzz once. use this to know you're talking to the right box
  *       Fixed issue #15 where bad cards got denied and ok messages
+ *       Fixed woodshop using old package data
 ************************************************************************/
 #define MN_FIRMWARE_VERSION 1.20
 
@@ -806,7 +807,7 @@ int ezfGetPackagesByClientID (int clientID) {
  * the JSON can be parsed. Then it puts the JSON in g_clientPackages.
 */
 
-char temp[12000]; //This has to be long enough for an entire JSON response
+char temp[15000]; //This has to be long enough for an entire JSON response
 void ezfReceivePackagesByClientID (const char *event, const char *data)  {
     
     static int partCnt = 0;
@@ -818,7 +819,7 @@ void ezfReceivePackagesByClientID (const char *event, const char *data)  {
     g_clientPackagesResponseBuffer = g_clientPackagesResponseBuffer + String(data);
     debugEvent ("PackagesPart " + String(partCnt) + ": " + String(data));
 
-    DynamicJsonDocument docJSON(5000);
+    DynamicJsonDocument docJSON(10000);
    
    
     strcpy_safe(temp, g_clientPackagesResponseBuffer.c_str());
@@ -1879,6 +1880,19 @@ void adminGetUserInfo(int clientID, String memberNumber) {
 
 }
 
+// ---------------- loopUndefinedDevice ------
+// This is called over and over from the main loop when the
+// device is configured as type 0, undefined. This is most 
+// likely when the device is first set up or is undergoing some 
+// hardware debug.
+void loopUndefinedDevice() {
+
+    digitalWrite(READY_LED,HIGH);
+    digitalWrite(ADMIT_LED,HIGH);
+    digitalWrite(REJECT_LED,HIGH);
+
+}
+
 // --------------- loopAdmin -------------
 // This is called over and over from the main loop if the 
 // device is configured to be an admin device.
@@ -2107,6 +2121,7 @@ void loop() {
         // the "loop" continues there
         switch (EEPROMdata.deviceType) {
         case UNDEFINED_DEVICE:
+            loopUndefinedDevice();
             break;
         case CHECK_IN_DEVICE:
             loopCheckIn();
