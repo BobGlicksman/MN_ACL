@@ -51,25 +51,42 @@ void buzzerGoodBeeps3UpDownUp(){
 // pass in "" for one line to leave it unchanged
 void writeToLCD(String line1, String line2) {
 #ifdef LCD_PRESENT
+    static String currentLine1 = "";
+    static String currentLine2 = "";
     const char* BLANKLINE = "                ";
-    if ((line1.length() == 0) & (line2.length() ==0)) {
-        lcd.clear();
-    } else {
-        if (line1.length() > 0){
-            lcd.setCursor(0,0);
-            lcd.print(BLANKLINE);
-            lcd.setCursor(0,0);
-            lcd.print(line1.substring(0,16));                        
-        }
-        if (line2.length() > 0){
-            lcd.setCursor(0,1);
-            lcd.print(BLANKLINE);
-            lcd.setCursor(0,1);
-            lcd.print(line2.substring(0,16));
-        }
-    }
-    
 
+    if ((line1.length() == 0) & (line2.length() ==0)) {
+
+        lcd.clear();
+        currentLine1 = BLANKLINE;
+        currentLine2 = BLANKLINE;
+
+    } else {
+
+        String msg = "";
+        String msg2 = "";
+
+        if (line1.length() > 0){
+            msg = line1;
+        } else {
+            msg = currentLine1;
+        }               
+    
+        if (line2.length() > 0){
+            msg2 = line2;
+        } else {
+            msg2 = currentLine2;
+        }
+
+        lcd.clear();
+        lcd.setCursor(0,0);
+        lcd.print(msg.substring(0,16)); 
+        lcd.setCursor(0,1);
+        lcd.print(msg2.substring(0,16));
+
+        currentLine1 = msg; 
+        currentLine2 = msg2;
+    }
 
 #endif
 }
