@@ -119,8 +119,10 @@
  *       device type -1 will buzz once. use this to know you're talking to the right box
  *       Fixed issue #15 where bad cards got denied and ok messages
  *       Fixed woodshop using old package data
+ *  1.30 readTheCard now tests for block read failure and reports to user on LCD
+ *       readTheCard restructured to minimize time card must be presented
 ************************************************************************/
-#define MN_FIRMWARE_VERSION 1.20
+#define MN_FIRMWARE_VERSION 1.30
 
 // Our RFID card encryption keys
 #include "rfidkeys.h"
