@@ -28,17 +28,17 @@ void buzzerBadBeep() {
     tone(BUZZER_PIN,250,500);
 }
 
-void buzzerGoodBeep(){
+void buzzerGoodBeepOnce(){
     tone(BUZZER_PIN,750,50); //good
 }
 
-void buzzerGoodBeeps2(){
+void buzzerGoodBeepTwice(){
     tone(BUZZER_PIN,750,50); //good
     delay(100);
     tone(BUZZER_PIN,750,50);
 }
 
-void buzzerGoodBeeps3(){
+void buzzerGoodBeeps3UpDownUp(){
     tone(BUZZER_PIN,1000,50); //good
     delay(100);
     tone(BUZZER_PIN,750,50);

@@ -131,7 +131,7 @@ void responseRFIDKeys(const char *event, const char *data) {
         }
             
         debugEvent("key parsed");
-        buzzerGoodBeep();
+        buzzerGoodBeepOnce();
        
     } else {
         writeToLCD("JSON KEY error",JSONParseError);
@@ -691,7 +691,7 @@ enumRetStatus readTheCard(String msg1, String msg2) {
             buzzerBadBeep();
             delay(1000);
         } else {
-            buzzerGoodBeep();
+            buzzerGoodBeepOnce();
         }
 
         Serial.println(msg);
@@ -754,7 +754,7 @@ void resetCardToFreshNow() {
         if (millis() - processStartMilliseconds > 15000) {
             writeToLCD ("Tired of waiting", " ");
             delay(500);
-            buzzerGoodBeep();
+            buzzerGoodBeepOnce();
             g_adminCommand = acIDLE;
             g_adminCommandData = "";
             return;
@@ -810,7 +810,7 @@ void resetCardToFreshNow() {
     if (cardIsReady) {
         Serial.println("\nMade fresh card to MN card OK\n");
         writeToLCD("Card is fresh","now");
-        buzzerGoodBeeps2();
+        buzzerGoodBeepTwice();
     } else {
         writeToLCD("Failed change", "to MN type");
         buzzerBadBeep();
@@ -928,7 +928,7 @@ void burnCardNow(int clientID, String cardUID) {
     clearCardData();
     Serial.println("Remove card from reader ...");
     writeToLCD("Card Done","remove card");
-    buzzerGoodBeeps2();
+    buzzerGoodBeepTwice();
 
     while(nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
         // wait for card to be removed

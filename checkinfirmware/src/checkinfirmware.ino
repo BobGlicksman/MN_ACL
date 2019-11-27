@@ -273,7 +273,7 @@ int cloudSetDeviceType(String data) {
     int deviceType = data.toInt();
 
     if (deviceType == -1) {
-        buzzerGoodBeep();
+        buzzerGoodBeepOnce();
     } else if (deviceType) {
         logToDB("DeviceTypeChange" + deviceTypeToString( (enumDeviceConfigType) deviceType),"",0,"");
         EEPROMdata.deviceType = (enumDeviceConfigType) deviceType;
@@ -1361,7 +1361,7 @@ void loopWoodshopDoor() {
             String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
             writeToLCD("Thanks for a tap", "Woodshop Ok" );
             digitalWrite(ADMIT_LED,HIGH);
-            buzzerGoodBeeps2();
+            buzzerGoodBeepTwice();
             delay(1000);
             digitalWrite(ADMIT_LED,LOW);
             debugEvent("Timeout writing to log DB - woodshop result");
@@ -1371,7 +1371,7 @@ void loopWoodshopDoor() {
            
             writeToLCD("Woodshop allowed", "Be Safe");
             digitalWrite(ADMIT_LED,HIGH);
-            buzzerGoodBeeps2();
+            buzzerGoodBeepTwice();
             delay(2000);
             digitalWrite(ADMIT_LED,LOW);
             wsloopState = wslWAITFORCARD;
@@ -1385,14 +1385,14 @@ void loopWoodshopDoor() {
                 String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
                 writeToLCD("Welcome","to Woodshop");
                 digitalWrite(ADMIT_LED,HIGH);
-                buzzerGoodBeeps2();
+                buzzerGoodBeepTwice();
                 delay(1000);
                 digitalWrite(ADMIT_LED,LOW);
             } else {
                 String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
                 writeToLCD("Goodbye",fullName.substring(0,15));
                 digitalWrite(ADMIT_LED,HIGH);
-                buzzerGoodBeeps3();
+                buzzerGoodBeeps3UpDownUp();
                 delay(1000);
                 digitalWrite(ADMIT_LED,LOW);
             }
@@ -1577,7 +1577,7 @@ void loopCheckIn() {
             String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
             writeToLCD("Thanks for a tap",fullName.substring(0,15) );
             digitalWrite(ADMIT_LED,HIGH);
-            buzzerGoodBeeps2();
+            buzzerGoodBeepTwice();
             delay(1000);
             digitalWrite(ADMIT_LED,LOW);
             debugEvent("Timeout looking for action tag");
@@ -1590,14 +1590,14 @@ void loopCheckIn() {
                 String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
                 writeToLCD("Welcome",fullName.substring(0,15));
                 digitalWrite(ADMIT_LED,HIGH);
-                buzzerGoodBeeps2();
+                buzzerGoodBeepTwice();
                 delay(1000);
                 digitalWrite(ADMIT_LED,LOW);
             } else {
                 String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
                 writeToLCD("Goodbye",fullName.substring(0,15));
                 digitalWrite(ADMIT_LED,HIGH);
-                buzzerGoodBeeps3();
+                buzzerGoodBeeps3UpDownUp();
                 delay(1000);
                 digitalWrite(ADMIT_LED,LOW);
             }
@@ -1708,7 +1708,7 @@ enum idcState {
             g_identifyCardResult = clientInfoToJSON(0,"OK", true);
             String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
             writeToLCD("Card is for",fullName.substring(0,15));
-            buzzerGoodBeep();
+            buzzerGoodBeepOnce();
             processStartMilliseconds = millis();
             idcState = idcDISPLAYINGINFO;
 
@@ -2083,7 +2083,7 @@ void setup() {
 
     // Signal ready to go
     writeToLCD(deviceTypeToString(EEPROMdata.deviceType),"ver. " + String(MN_FIRMWARE_VERSION));
-    buzzerGoodBeeps2();
+    buzzerGoodBeepTwice();
     //flash the D7 LED twice
     for (int i = 0; i < 2; i++) {
         digitalWrite(ONBOARD_LED_PIN, HIGH);

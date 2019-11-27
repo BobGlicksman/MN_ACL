@@ -93,11 +93,11 @@ extern bool allowDebugToPublish;  // when false, debugEvent will hold off on pub
 
 void buzzerBadBeep();
 
-void buzzerGoodBeep();
+void buzzerGoodBeepOnce();
 
-void buzzerGoodBeeps2();
+void buzzerGoodBeepTwice();
 
-void buzzerGoodBeeps3();
+void buzzerGoodBeeps3UpDownUp();
 
 void writeToLCD(String line1, String line2);
 
