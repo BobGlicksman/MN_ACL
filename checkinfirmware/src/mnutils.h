@@ -58,7 +58,7 @@ typedef enum {
     ADMIN_DEVICE = 2,
     BOSSLASER = 3,
     WOODSHOP = 4
-} enumDeviceConfigType;
+} enumDeviceConfigType;  // current value in EEPROMdata.deviceType
 
 // you can add more fields to the end of this structure, just don't change
 // the order or size of any existing fields.
@@ -71,6 +71,7 @@ struct structEEPROMdata {
 // xxx this should be accessed via a function call in the module and removed from global scope
 extern structEEPROMdata EEPROMdata; 
 
+// xxx change RFIDCardKey to rfidcardmnuid
 struct  struct_clientInfo {  // holds info on the current client
     String lastName = "";           // lastName
     String firstName = "";      // just the first lastName
@@ -92,11 +93,11 @@ extern bool allowDebugToPublish;  // when false, debugEvent will hold off on pub
 
 void buzzerBadBeep();
 
-void buzzerGoodBeep();
+void buzzerGoodBeepOnce();
 
-void buzzerGoodBeeps2();
+void buzzerGoodBeepTwice();
 
-void buzzerGoodBeeps3();
+void buzzerGoodBeeps3UpDownUp();
 
 void writeToLCD(String line1, String line2);
 

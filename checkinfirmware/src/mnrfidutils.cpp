@@ -131,7 +131,7 @@ void responseRFIDKeys(const char *event, const char *data) {
         }
             
         debugEvent("key parsed");
-        buzzerGoodBeep();
+        buzzerGoodBeepOnce();
        
     } else {
         writeToLCD("JSON KEY error",JSONParseError);
@@ -480,6 +480,9 @@ uint8_t authenticateBlock(int blockNum, uint8_t keyNum, uint8_t *key) {
  *  MN formatted.  Otherwise, the card is declared to be "other" and the designed sector is likely 
  *  unusable.
  * 
+ *  Before calling this routine you must have true returned from
+ *     nfc.readPassiveTargetID
+ * 
  * return:  result code, as uint8_t, as follows:
  *  0 means factory fresh card
  *  1 means MN formatted card
@@ -493,6 +496,7 @@ uint8_t testCard() {
         Serial.println("Trying to authenticate with default key A ....");
     #endif
     
+    // xxx Would be better to test g_secretKeyA first, since that is the most common case
     success = authenticateBlock(2, 0, DEFAULT_KEY_A);
     if(success == true)   {   // we can assume a factory fresh card
         #ifdef TEST
@@ -555,7 +559,9 @@ enumRetStatus readTheCard(String msg1, String msg2) {
     enumRetStatus returnStatus = IN_PROCESS;
 
     //uint8_t success;
-    uint8_t dataBlock[] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15}; //  16 byte buffer to hold a block of data
+    uint8_t dataBlock0[] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15}; //  16 byte buffer to hold a block of data
+    uint8_t dataBlock1[] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15}; //  16 byte buffer to hold a block of data
+
     //bool flag = false;  // toggle flag for testing purposes
 
     
@@ -574,7 +580,7 @@ enumRetStatus readTheCard(String msg1, String msg2) {
     // we have a card presented
     digitalWrite(READY_LED,LOW);
     clearCardData();
-    writeToLCD("","");
+    //writeToLCD("Reading Card","   Wait   ");
   
     #ifdef TEST
         // Display some basic information about the card
@@ -604,60 +610,92 @@ enumRetStatus readTheCard(String msg1, String msg2) {
     
     case 1: {
         // MN formatted card
-        Serial.println("\n\nCard is type Maker Nexus formatted\n");
+        #ifdef TEST
+            Serial.println("\n\nCard is type Maker Nexus formatted\n");
+        #endif
+        
+        String theClientID = "";
+        String theUID = "";
 
-        // now read the data using MN Key and store in g_cardData
-        readBlockData(dataBlock, 0,  0, g_secretKeyA);
+        // now read the data using MN Key
+        bool result0 = readBlockData(dataBlock0, 0,  0, g_secretKeyA);
+        bool result1 = readBlockData(dataBlock1, 1,  0, g_secretKeyA);
+        Serial.println("Remove card from reader ...");
+        writeToLCD(" ","Remove card ...");
+
         #ifdef TEST
             Serial.println("The clientID data is:");
-            nfc.PrintHex(dataBlock, 16);
+            nfc.PrintHex(dataBlock0, 16);
             Serial.println("");
-        #endif
-
-        String theClientID = "";
-        for (int i=0; i<16; i++) {
-            theClientID = theClientID + String( (char) dataBlock[i] ); 
-        }
-
-        // read UID and store in g_cardData
-        readBlockData(dataBlock, 1,  0, g_secretKeyA);
-        #ifdef TEST
             Serial.println("The MN UID data is:");
-            nfc.PrintHex(dataBlock, 16);
+            nfc.PrintHex(dataBlock1, 16);
         #endif
-         
-        String theUID = "";
-        for (int i=0; i<16; i++) {
-            if(dataBlock[i] !=0) {
-                theUID = theUID + String( (char) dataBlock[i] ); 
-            } else {
-                break; // reached a null character
+
+        // Did we get a good read from each block?
+        if (result0 && result1) {
+            // good results, move data into g_cardData
+
+            // Copy out block 0
+            for (int i=0; i<16; i++) {
+                theClientID = theClientID + String( (char) dataBlock0[i] ); 
             }
+
+            // Copy out block 1    
+            for (int i=0; i<16; i++) {
+                if(dataBlock1[i] !=0) {
+                    theUID = theUID + String( (char) dataBlock1[i] ); 
+                } else {
+                    break; // reached a null character
+                }
+            }
+
+            g_cardData.clientID = theClientID.toInt();
+            g_cardData.UID = theUID;
+            g_cardData.cardStatus = "MN Format Card";
+            g_cardData.isValid = true;
         }
 
-        g_cardData.clientID = theClientID.toInt();
-        g_cardData.UID = theUID;
-        g_cardData.cardStatus = "MN Format Card";
-        g_cardData.isValid = true;
-        
         // display the status to the user
         String msg = "";
         String msg2 = "";
-        if (g_cardData.clientID == 0 ) {
+
+        if (!result0) {
+            // error reading block 0 data 
             returnStatus = COMPLETE_FAIL;
+            g_cardData.cardStatus = "Block 0 read failure";
             msg = "Card read failed";
+            msg2 = "try again: 0";
+            
+        } else if (!result1) {
+            // error reading block 1 data 
+            returnStatus = COMPLETE_FAIL;
+            g_cardData.cardStatus = "Block 1 read failure";
+            msg = "Card read failed";
+            msg2 = "try again :1";
+
+        } else if (g_cardData.clientID == 0 ) {
+            // got a bad clientID
+            returnStatus = COMPLETE_FAIL;
+            g_cardData.cardStatus = "clientID read as 0 - or not numeric";
+            msg = "Card read failed";
+
+        } else {
+            returnStatus = COMPLETE_OK;
+            msg = "";
+            msg2 = "";
+        }
+        
+        // If msg, then something went wrong
+        if (msg.length() != 0) {
+            writeToLCD(msg, msg2);
             buzzerBadBeep();
             delay(1000);
         } else {
-            returnStatus = COMPLETE_OK;
-            //msg = "CID:" + String(g_cardData.clientID);
-            //msg2 = "UID:" + String(g_cardData.UID);
-            buzzerGoodBeep();
+            buzzerGoodBeepOnce();
         }
-       // writeToLCD(msg, msg2);
+
         Serial.println(msg);
         Serial.println("");  
-        //delay(1000);
         break;
         }
 
@@ -689,7 +727,7 @@ enumRetStatus readTheCard(String msg1, String msg2) {
     if (nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
         // card is on the reader, put up a message
         Serial.println("Remove card from reader ...");
-        writeToLCD("","Remove card ...");
+        writeToLCD(" ","Remove card ...");
     }
     
     while(nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
@@ -716,7 +754,7 @@ void resetCardToFreshNow() {
         if (millis() - processStartMilliseconds > 15000) {
             writeToLCD ("Tired of waiting", " ");
             delay(500);
-            buzzerGoodBeep();
+            buzzerGoodBeepOnce();
             g_adminCommand = acIDLE;
             g_adminCommandData = "";
             return;
@@ -772,7 +810,7 @@ void resetCardToFreshNow() {
     if (cardIsReady) {
         Serial.println("\nMade fresh card to MN card OK\n");
         writeToLCD("Card is fresh","now");
-        buzzerGoodBeeps2();
+        buzzerGoodBeepTwice();
     } else {
         writeToLCD("Failed change", "to MN type");
         buzzerBadBeep();
@@ -890,7 +928,7 @@ void burnCardNow(int clientID, String cardUID) {
     clearCardData();
     Serial.println("Remove card from reader ...");
     writeToLCD("Card Done","remove card");
-    buzzerGoodBeeps2();
+    buzzerGoodBeepTwice();
 
     while(nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
         // wait for card to be removed
