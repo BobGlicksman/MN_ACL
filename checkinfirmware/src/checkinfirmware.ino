@@ -280,7 +280,6 @@ void rebootSet(long millisecondsToWait) {
 
         //set the reboot time
         rebootTime = millis() + millisecondsToWait;
-        debugEvent("Reboot scheduled for millisec from now: " + millisecondsToWait );
     
     } else if (millis() > rebootTime) {
 
