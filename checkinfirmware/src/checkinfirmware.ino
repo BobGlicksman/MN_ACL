@@ -264,6 +264,32 @@ void heartbeatLEDs() {
     
 }
 
+// ---------- Reboot Manager ----------
+// rebootSet()
+//   Called in the main loop with a 0 parameter
+//   Checks to see if a reboot is pending and if so, is it time to do the reboot.
+// 
+//   Pass in a number of milliseconds to wait for a reboot and it will not 
+//   reboot but instead it will set the reboot timer.
+//   
+void rebootSet(long millisecondsToWait) {
+
+    static unsigned long rebootTime = 4294967290;  // makes it so we don't reboot as soon as the system starts
+
+    if (millisecondsToWait > 0) {
+
+        //set the reboot time
+        rebootTime = millis() + millisecondsToWait;
+        debugEvent("Reboot scheduled for millisec from now: " + millisecondsToWait );
+    
+    } else if (millis() > rebootTime) {
+
+        System.reset();
+
+    }
+
+}
+
 // ------------- Set Device Type ---------
 // Called with a number to set device type to determine behavior
 // Valid values are in eDeviceConfigType
@@ -2154,5 +2180,13 @@ void loop() {
     heartbeatLEDs(); // heartbead on D7 LED 
 
     debugEvent("");  // need this to pump the debug event process
+
+    // Reboot once a day.
+    if ( (Time.hour() == 1) && (Time.minute() == 5)) {   
+        // Since we only check the Minute, set the reboot to be at least one minute from now
+        long rebootDelay = (int) random(70000,30000); // 70 seconds - 5 minutes
+        rebootSet(rebootDelay); 
+    }
+    rebootSet(0); // check to see if a reboot should happen
 }
 
