@@ -413,23 +413,40 @@ int ezfGetCheckInTokenCloud (String data) {
  * Called to make sure g_authTokenCheckIn is valid.
  * If the token is still valid, this routine does nothing.
  * If the token has expired (or was never initialized) then this starts 
- * the process by calling the webhook ezfCheckInToken.
+ * the process by calling the webhook ezfCheckInToken. This will not ask for
+ * a token if the previous request for a token was less than 20 seconds ago.
  * 
- * Caller should check length of g_authTokenCheckIn. If > 0 after calling this
- * routine, then the token is valid.
+ * Caller should wait until length of g_authTokenCheckIn > 0 after calling this
+ * routine.
 */
 
-// Don't call this faster than every 30 seconds, give the 
-// last call time to complete
 int ezfGetCheckInToken () {
     
-    // xxx note at all places we use millis can wrap in 70 days
-    if (g_authTokenCheckIn.goodUntil < millis() ) {
-        // Token is no longer good    
-        g_authTokenCheckIn.token = "";
-        g_tokenResponseBuffer = "";
-        Particle.publish("ezfCheckInToken", "", PRIVATE);
-    
+    static unsigned long lastRequest = 0;
+
+    if (g_authTokenCheckIn.goodUntil > millis()){
+
+        // the current token is still good 
+        // do nothing
+
+    } else {
+
+        // current token has expired, consider getting a new one 
+        if (lastRequest + 20000 > millis()) {
+
+            // we asked for a token less than 20 seconds ago
+            // do nothing
+
+        } else {
+
+            // we haven't asked for a token in a while, so ask for one 
+            g_authTokenCheckIn.token = "";
+            g_tokenResponseBuffer = "";
+            Particle.publish("ezfCheckInToken", "", PRIVATE);
+            lastRequest = millis();
+        
+        }
+
     }
 
     return 0;
@@ -2179,6 +2196,13 @@ void loop() {
     heartbeatLEDs(); // heartbead on D7 LED 
 
     debugEvent("");  // need this to pump the debug event process
+
+    // for the hours of 8am to midnight, see if we need a new token
+    // we do this test so that we always have a good token 
+    // the ezfGetCheckInToken() will make sure we don't call the cloud too often
+    if ((Time.hour() >= 8) && (Time.hour() <= 23)) {
+        ezfGetCheckInToken();
+    }
 
     // Reboot once a day.
     if ( (Time.hour() == 1) && (Time.minute() == 5)) {   
