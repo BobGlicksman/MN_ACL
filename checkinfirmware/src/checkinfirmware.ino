@@ -312,6 +312,65 @@ int cloudSetDeviceType(String data) {
 
 }
 
+/*************
+ * reportCardError(cardType)
+ *  
+ * Alert the user that we had a problem reading the RFID card 
+ * 
+*/
+void reportCardError(uint8_t cardType){
+
+    switch (cardType) {
+    case 255:
+        writeToLCD("why here?","no card present");
+        break;
+
+    case 0:
+        Serial.println("\n\nCard is type factory fresh\n");
+        logToDB("CardTypeFactoryFresh","",0,"");
+        writeToLCD("Card is not MN","(fresh format)");
+        buzzerBadBeep();
+        delay(1000);
+        break;
+    
+    case 1:
+        // MN formatted card, nothing to report
+        #ifdef TEST
+            Serial.println("\n\nCard is type Maker Nexus formatted\n");
+        #endif
+        break;
+
+    case 2:
+        // Not an MN format
+        Serial.println("\n\nCard is not a known format\n");
+        logToDB("CardTypeUnknown","",0,"");
+        writeToLCD("Card type","Unknown");
+        buzzerBadBeep();
+        delay(1000);
+        break;     
+
+    case 3:
+        // old format of MN card
+        Serial.println("\n\nCard is type Maker Nexus old formatted\n");
+        logToDB("CardTypeOldMN","",0,"");
+        writeToLCD("Card is old MN"," ");
+        buzzerBadBeep();
+        delay(1000);
+        break;
+
+    default:
+        Serial.println("\n\nCard is type is unexpected\n");
+        logToDB("CardTypeUnexpected","",0,"");
+        writeToLCD("Card type","unexpected");
+        buzzerBadBeep();
+        delay(1000);
+        break;
+    }
+
+    return;
+
+}
+
 //--------------- particleCallbackMNLOGDB --------------------
 // 
 // This routine  is registered with the particle cloud to receive any
@@ -1266,7 +1325,8 @@ void loopWoodshopDoor() {
         break;
     case wslWAITFORCARD: {
         digitalWrite(READY_LED,HIGH);
-        enumRetStatus retStatus = readTheCard("Badge in for","Woodshop");
+        writeToLCD("Badge in for","Woodshop");
+        enumRetStatus retStatus = readTheCard();
         if (retStatus == COMPLETE_OK) {
             // move to the next step
             wsloopState = wslREQUESTTOKEN;
@@ -1485,12 +1545,15 @@ void loopCheckIn() {
         break;
     case cilWAITFORCARD: {
         digitalWrite(READY_LED,HIGH);
-        enumRetStatus retStatus = readTheCard("Place card on","spot to checkin");
+        writeToLCD("Place card on","spot to checkin");
+        enumRetStatus retStatus = readTheCard();
         if (retStatus == COMPLETE_OK) {
             // card was read and data obtained, move to the next step
+            writeToLCD("checking...", " ");
             cilloopState = cilREQUESTTOKEN;
             digitalWrite(READY_LED,LOW);
             }
+        // otherwise just stay in this state wating for a good card presentation and read
         break;
     }
     case cilREQUESTTOKEN: 
@@ -1697,27 +1760,42 @@ enum idcState {
 
     case idcWAITFORCARD: 
         if(millis() - processStartMilliseconds > 15000){
-            // timeout
+            // timeout waiting for a card, so go idle state
             idcState = idcCLEANUP;
         } else  {
-            enumRetStatus retStatus = readTheCard("Whose Card?", " ");
-            if (retStatus == COMPLETE_OK) {
-                writeToLCD("read card cID:",String(g_cardData.clientID));
-                // move to the next step
+            writeToLCD("Whose Card?", " ");
 
-                // request a good token from ezf
-                ezfGetCheckInTokenCloud("junk");
-                processStartMilliseconds = millis();
+            // test the card to determine its type
+            uint8_t cardType = testCard();
 
-                idcState = idcWAITFORTOKEN;
-                digitalWrite(READY_LED,LOW);
+            if (cardType == 255) {
+                // no card presented. 
+                // do nothing and remain in this state
+            } else if (cardType == 1) {
+                // MN formatted card, so continue process
+                enumRetStatus retStatus = readTheCard();
+                if (retStatus == COMPLETE_OK) {
+                    writeToLCD("read card cID:",String(g_cardData.clientID));
+                    // move to the next step
 
-            } else if (retStatus == COMPLETE_FAIL) {
-                writeToLCD("Card read fail",g_cardData.cardStatus);
-                g_identifyCardResult = clientInfoToJSON(1,"Card read failed",true);
-                idcState = idcCLEANUP;
+                    // request a good token from ezf
+                    ezfGetCheckInTokenCloud("junk");
+                    processStartMilliseconds = millis();
+
+                    idcState = idcWAITFORTOKEN;
+                    digitalWrite(READY_LED,LOW);
+
+                } else {
+                    writeToLCD("Card read fail",g_cardData.cardStatus);
+                    g_identifyCardResult = clientInfoToJSON(1,"Card read failed",true);
+                    idcState = idcCLEANUP;
+                } 
+
             } else {
-                //remain in this state
+                // got a card, but not a type we want
+                // report card error
+                reportCardError(cardType);
+                idcState = idcCLEANUP;
             }
         }
         break;
