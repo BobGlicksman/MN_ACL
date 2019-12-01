@@ -177,7 +177,7 @@ uint8_t testCard();
 // try to checkin this client
 //
 
-enumRetStatus readTheCard(String msg1, String msg2);
+enumRetStatus readTheCard(); 
 
 
 

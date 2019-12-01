@@ -121,8 +121,10 @@
  *       Fixed woodshop using old package data
  *  1.30 readTheCard now tests for block read failure and reports to user on LCD
  *       readTheCard restructured to minimize time card must be presented
+ *  1.40 deployed into production
+ *  1.41 added ShopBot to allowed woodshop packages
 ************************************************************************/
-#define MN_FIRMWARE_VERSION 1.30
+#define MN_FIRMWARE_VERSION 1.41
 
 // Our RFID card encryption keys
 #include "rfidkeys.h"
@@ -312,6 +314,65 @@ int cloudSetDeviceType(String data) {
 
 }
 
+/*************
+ * reportCardError(cardType)
+ *  
+ * Alert the user that we had a problem reading the RFID card 
+ * 
+*/
+void reportCardError(uint8_t cardType){
+
+    switch (cardType) {
+    case 255:
+        writeToLCD("why here?","no card present");
+        break;
+
+    case 0:
+        Serial.println("\n\nCard is type factory fresh\n");
+        logToDB("CardTypeFactoryFresh","",0,"");
+        writeToLCD("Card is not MN","(fresh format)");
+        buzzerBadBeep();
+        delay(1000);
+        break;
+    
+    case 1:
+        // MN formatted card, nothing to report
+        #ifdef TEST
+            Serial.println("\n\nCard is type Maker Nexus formatted\n");
+        #endif
+        break;
+
+    case 2:
+        // Not an MN format
+        Serial.println("\n\nCard is not a known format\n");
+        logToDB("CardTypeUnknown","",0,"");
+        writeToLCD("Card type","Unknown");
+        buzzerBadBeep();
+        delay(1000);
+        break;     
+
+    case 3:
+        // old format of MN card
+        Serial.println("\n\nCard is type Maker Nexus old formatted\n");
+        logToDB("CardTypeOldMN","",0,"");
+        writeToLCD("Card is old MN"," ");
+        buzzerBadBeep();
+        delay(1000);
+        break;
+
+    default:
+        Serial.println("\n\nCard is type is unexpected\n");
+        logToDB("CardTypeUnexpected","",0,"");
+        writeToLCD("Card type","unexpected");
+        buzzerBadBeep();
+        delay(1000);
+        break;
+    }
+
+    return;
+
+}
+
 //--------------- particleCallbackMNLOGDB --------------------
 // 
 // This routine  is registered with the particle cloud to receive any
@@ -413,23 +474,40 @@ int ezfGetCheckInTokenCloud (String data) {
  * Called to make sure g_authTokenCheckIn is valid.
  * If the token is still valid, this routine does nothing.
  * If the token has expired (or was never initialized) then this starts 
- * the process by calling the webhook ezfCheckInToken.
+ * the process by calling the webhook ezfCheckInToken. This will not ask for
+ * a token if the previous request for a token was less than 20 seconds ago.
  * 
- * Caller should check length of g_authTokenCheckIn. If > 0 after calling this
- * routine, then the token is valid.
+ * Caller should wait until length of g_authTokenCheckIn > 0 after calling this
+ * routine.
 */
 
-// Don't call this faster than every 30 seconds, give the 
-// last call time to complete
 int ezfGetCheckInToken () {
     
-    // xxx note at all places we use millis can wrap in 70 days
-    if (g_authTokenCheckIn.goodUntil < millis() ) {
-        // Token is no longer good    
-        g_authTokenCheckIn.token = "";
-        g_tokenResponseBuffer = "";
-        Particle.publish("ezfCheckInToken", "", PRIVATE);
-    
+    static unsigned long lastRequest = 0;
+
+    if (g_authTokenCheckIn.goodUntil > millis()){
+
+        // the current token is still good 
+        // do nothing
+
+    } else {
+
+        // current token has expired, consider getting a new one 
+        if (lastRequest + 20000 > millis()) {
+
+            // we asked for a token less than 20 seconds ago
+            // do nothing
+
+        } else {
+
+            // we haven't asked for a token in a while, so ask for one 
+            g_authTokenCheckIn.token = "";
+            g_tokenResponseBuffer = "";
+            Particle.publish("ezfCheckInToken", "", PRIVATE);
+            lastRequest = millis();
+        
+        }
+
     }
 
     return 0;
@@ -1064,6 +1142,10 @@ String isClientOkForWoodshop (){
         // They have a wood package, they are good to go
         return "";
     }
+    if ( g_clientPackages.packagesJSON.indexOf("ShopBot") > 0 ) {
+        // They have a wood package, they are good to go
+        return "";
+    } 
 
     return "Wood Not Found";
 
@@ -1249,7 +1331,8 @@ void loopWoodshopDoor() {
         break;
     case wslWAITFORCARD: {
         digitalWrite(READY_LED,HIGH);
-        enumRetStatus retStatus = readTheCard("Badge in for","Woodshop");
+        writeToLCD("Badge in for","Woodshop");
+        enumRetStatus retStatus = readTheCard();
         if (retStatus == COMPLETE_OK) {
             // move to the next step
             wsloopState = wslREQUESTTOKEN;
@@ -1468,12 +1551,15 @@ void loopCheckIn() {
         break;
     case cilWAITFORCARD: {
         digitalWrite(READY_LED,HIGH);
-        enumRetStatus retStatus = readTheCard("Place card on","spot to checkin");
+        writeToLCD("Place card on","spot to checkin");
+        enumRetStatus retStatus = readTheCard();
         if (retStatus == COMPLETE_OK) {
             // card was read and data obtained, move to the next step
+            writeToLCD("checking...", " ");
             cilloopState = cilREQUESTTOKEN;
             digitalWrite(READY_LED,LOW);
             }
+        // otherwise just stay in this state wating for a good card presentation and read
         break;
     }
     case cilREQUESTTOKEN: 
@@ -1680,27 +1766,42 @@ enum idcState {
 
     case idcWAITFORCARD: 
         if(millis() - processStartMilliseconds > 15000){
-            // timeout
+            // timeout waiting for a card, so go idle state
             idcState = idcCLEANUP;
         } else  {
-            enumRetStatus retStatus = readTheCard("Whose Card?", " ");
-            if (retStatus == COMPLETE_OK) {
-                writeToLCD("read card cID:",String(g_cardData.clientID));
-                // move to the next step
+            writeToLCD("Whose Card?", " ");
 
-                // request a good token from ezf
-                ezfGetCheckInTokenCloud("junk");
-                processStartMilliseconds = millis();
+            // test the card to determine its type
+            uint8_t cardType = testCard();
 
-                idcState = idcWAITFORTOKEN;
-                digitalWrite(READY_LED,LOW);
+            if (cardType == 255) {
+                // no card presented. 
+                // do nothing and remain in this state
+            } else if (cardType == 1) {
+                // MN formatted card, so continue process
+                enumRetStatus retStatus = readTheCard();
+                if (retStatus == COMPLETE_OK) {
+                    writeToLCD("read card cID:",String(g_cardData.clientID));
+                    // move to the next step
 
-            } else if (retStatus == COMPLETE_FAIL) {
-                writeToLCD("Card read fail",g_cardData.cardStatus);
-                g_identifyCardResult = clientInfoToJSON(1,"Card read failed",true);
-                idcState = idcCLEANUP;
+                    // request a good token from ezf
+                    ezfGetCheckInTokenCloud("junk");
+                    processStartMilliseconds = millis();
+
+                    idcState = idcWAITFORTOKEN;
+                    digitalWrite(READY_LED,LOW);
+
+                } else {
+                    writeToLCD("Card read fail",g_cardData.cardStatus);
+                    g_identifyCardResult = clientInfoToJSON(1,"Card read failed",true);
+                    idcState = idcCLEANUP;
+                } 
+
             } else {
-                //remain in this state
+                // got a card, but not a type we want
+                // report card error
+                reportCardError(cardType);
+                idcState = idcCLEANUP;
             }
         }
         break;
@@ -2179,6 +2280,13 @@ void loop() {
     heartbeatLEDs(); // heartbead on D7 LED 
 
     debugEvent("");  // need this to pump the debug event process
+
+    // for the hours of 8am to midnight, see if we need a new token
+    // we do this test so that we always have a good token 
+    // the ezfGetCheckInToken() will make sure we don't call the cloud too often
+    if ((Time.hour() >= 8) && (Time.hour() <= 23)) {
+        ezfGetCheckInToken();
+    }
 
     // Reboot once a day.
     if ( (Time.hour() == 1) && (Time.minute() == 5)) {   
