@@ -121,8 +121,10 @@
  *       Fixed woodshop using old package data
  *  1.30 readTheCard now tests for block read failure and reports to user on LCD
  *       readTheCard restructured to minimize time card must be presented
+ *  1.40 deployed into production
+ *  1.41 added ShopBot to allowed woodshop packages
 ************************************************************************/
-#define MN_FIRMWARE_VERSION 1.30
+#define MN_FIRMWARE_VERSION 1.41
 
 // Our RFID card encryption keys
 #include "rfidkeys.h"
@@ -1140,6 +1142,10 @@ String isClientOkForWoodshop (){
         // They have a wood package, they are good to go
         return "";
     }
+    if ( g_clientPackages.packagesJSON.indexOf("ShopBot") > 0 ) {
+        // They have a wood package, they are good to go
+        return "";
+    } 
 
     return "Wood Not Found";
 
