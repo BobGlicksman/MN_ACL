@@ -78,10 +78,11 @@ file.
 {
     "event": "ezfGetPackagesByClientID",
     "responseTopic": "{{PARTICLE_DEVICE_ID}}ezfGetPackagesByClientID",
-    "url": "https://api.sandbox.ezfacility.com/v2/packages/clientID={{{clientID}}}",
+    "url": "https://api.ezfacility.com/v2/packages/{{{clientID}}}/active",
     "requestType": "GET",
     "noDefaults": true,
     "rejectUnauthorized": true,
+    "responseTemplate": "{{#0}} {{ReservationType}}| {{/0}}\n{{#1}} {{ReservationType}}| {{/1}}\n{{#2}} {{ReservationType}}| {{/2}}\n{{#3}} {{ReservationType}}| {{/3}}\n{{#4}} {{ReservationType}}| {{/4}}\n{{#5}} {{ReservationType}}| {{/5}}\n{{#6}} {{ReservationType}}| {{/6}}\n{{#7}} {{ReservationType}}| {{/7}}\n{{#8}} {{ReservationType}}| {{/8}}\n{{#9}} {{ReservationType}}| {{/9}}\n{{#10}} {{ReservationType}}| {{/10}}\n{{#11}} {{ReservationType}}| {{/11}}\n{{#12}} {{ReservationType}}| {{/12}}\n{{#13}} {{ReservationType}}| {{/13}}\n{{#14}} {{ReservationType}}| {{/14}}\nEndOfPackages\n",
     "headers": {
         "Authorization": "Bearer {{{access_token}}}",
         "Accept": "application/json",
