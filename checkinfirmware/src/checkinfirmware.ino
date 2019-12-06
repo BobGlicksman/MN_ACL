@@ -123,8 +123,9 @@
  *       readTheCard restructured to minimize time card must be presented
  *  1.40 deployed into production
  *  1.41 added ShopBot to allowed woodshop packages
+ *  1.42 has new packages code that relies on mustache template to be used at the webhook
 ************************************************************************/
-#define MN_FIRMWARE_VERSION 1.41
+#define MN_FIRMWARE_VERSION 1.42
 
 // Our RFID card encryption keys
 #include "rfidkeys.h"
@@ -170,7 +171,7 @@ struct struct_authTokenCheckIn {
 
 struct struct_clientPackages {
     bool isValid = false;
-    String packagesJSON;
+    String packagesString;
 } g_clientPackages;
 
 
@@ -872,7 +873,7 @@ void ezfReceiveClientByClientID (const char *event, const char *data)  {
 //   called to reset g_clientPackages to initial state
 void clearClientPackages() {
     g_clientPackages.isValid = false;
-    g_clientPackages.packagesJSON = "";
+    g_clientPackages.packagesString = "";
 }
 
 // ezfGetPackagesByClientID
@@ -908,11 +909,13 @@ int ezfGetPackagesByClientID (int clientID) {
  * Called from particleCallbackEZF() when it gets a response from
  * the get packages webhook. 
  * 
- * This function accumulates the response packages until it finds that
- * the JSON can be parsed. Then it puts the JSON in g_clientPackages.
+ * This function accumulates the response packages until it finds the
+ * string EndOfPackages. Then it puts the response string in g_clientPackages.packagesString 
+ * The response string is a concatenated list of all the package ReservationTypes
+ * returned from the CRM system. This list contains all the machines the client
+ * has permission to use.
 */
 
-char temp[15000]; //This has to be long enough for an entire JSON response
 void ezfReceivePackagesByClientID (const char *event, const char *data)  {
     
     static int partCnt = 0;
@@ -924,19 +927,10 @@ void ezfReceivePackagesByClientID (const char *event, const char *data)  {
     g_clientPackagesResponseBuffer = g_clientPackagesResponseBuffer + String(data);
     debugEvent ("PackagesPart " + String(partCnt) + ": " + String(data));
 
-    DynamicJsonDocument docJSON(10000);
-   
-   
-    strcpy_safe(temp, g_clientPackagesResponseBuffer.c_str());
-    
-    // will it parse?
-    DeserializationError err = deserializeJson(docJSON, temp );
-    JSONParseError =  err.c_str();
-    if (!err) {
-        g_clientPackages.packagesJSON = g_clientPackagesResponseBuffer;
+    if (g_clientPackagesResponseBuffer.indexOf("EndOfPackages") > 0 ) {
+        g_clientPackages.packagesString = g_clientPackagesResponseBuffer;
         g_clientPackages.isValid = true;
         g_clientPackagesResponseBuffer = "";
-
     }
         
 }
@@ -1138,11 +1132,11 @@ String isClientOkForWoodshop (){
 
     // Test for a good account status
 
-    if ( g_clientPackages.packagesJSON.indexOf("Wood") > 0 ) {
+    if ( g_clientPackages.packagesString.indexOf("Wood") > 0 ) {
         // They have a wood package, they are good to go
         return "";
     }
-    if ( g_clientPackages.packagesJSON.indexOf("ShopBot") > 0 ) {
+    if ( g_clientPackages.packagesString.indexOf("ShopBot") > 0 ) {
         // They have a wood package, they are good to go
         return "";
     } 
