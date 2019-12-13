@@ -1,0 +1,9 @@
+3 files in zip file:
+1. mn_rfid_case_09_29.svg    Case sides , top and bottom . Note that gray and purple outlines are just used for reference and alignment. Red cut out
+2. mn_textandrfid.png             Front panel Maker Nexus and RFID graphics
+3. pn532_sing_44_44.png      Used to counter sink PN532 area.      Probably do not need this.
+
+Notes:
+1.  Wood used .25 inch birch 
+2. Used 7/32 drill bit to counter sink panel and pcb mounting holes (Using hand twisting bit  and eye balling depth)
+3, Used 7/16 drill bit to counter sink 5MM LED hole. (Using hand twisting bit  and eye balling depth)  LED clip required panel thickness .125 in.
