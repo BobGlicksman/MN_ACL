@@ -27,16 +27,34 @@ $con = mysqli_connect("localhost",$dbUser,$dbPassword,$dbName);
   
 $selectSQL = 
 "SELECT * FROM rawdata JOIN
-(
- SELECT  MAX(recNum) as maxRecNum, clientID FROM rawdata
-   WHERE logEvent in ('Checked In','Checked Out')
-     AND CONVERT( dateEventLocal, DATE) = CONVERT( '" . date_format($today, "Y-m-d") . "', DATE) 
-     AND clientID <> 0
-  GROUP by clientID
-) AS x
-on rawdata.recNum = x.maxRecNum
+(SELECT * FROM
+	(
+     SELECT  MAX(recNum) as maxRecNum, clientID 
+        FROM rawdata
+       WHERE logEvent in ('Checked In','Checked Out')
+         AND CONVERT( dateEventLocal, DATE) = CONVERT('"
+ . date_format($today, "Y-m-d") . 
+                                "', DATE) 
+         AND clientID <> 0
+      GROUP by clientID
+    ) AS x
+    LEFT JOIN
+    (
+     SELECT max(recNum) as maxRecNum2, clientID AS clientID2, 'Yes' as woodshop 
+        FROM rawdata
+        WHERE logEvent in ('Woodshop allowed')
+        AND CONVERT( dateEventLocal, DATE) = CONVERT( '" 
+. date_format($today, 'Y-m-d') . 
+                                "', DATE) 
+         AND clientID <> 0
+      GROUP by clientID
+    ) as y 
+    ON x.clientID = y.clientID2 
+) as z 
+on rawdata.recNum = z.maxRecNum
 where logEvent = 'Checked In' 
-ORDER BY rawdata.dateEventLocal DESC ";
+ORDER BY rawdata.dateEventLocal DESC";
+
 
 
 // Check connection
@@ -55,7 +73,12 @@ if (mysqli_num_rows($result) > 0) {
   // output data of each row
   while($row = mysqli_fetch_assoc($result)) {
     
-      $thisDiv = makeDiv( $row["firstName"], $row["clientID"]) . "\r\n";
+    $equip = "";
+    if ($row["woodshop"] == "Yes") {
+      $equip = $equip . "Wood";
+    }
+
+    $thisDiv = makeDiv( $row["firstName"], $row["clientID"], $equip ) . "\r\n";
     
     $photodivs = $photodivs . $thisDiv;
   }
@@ -78,10 +101,19 @@ return;
 function makeImageURL($data) {
 	return "<img class='IDPhoto' alt='no photo' src='https://c226212.ssl.cf0.rackcdn.com/" . $data . ".jpg'>";
 }
-function makeDiv($name, $clientID) {
-	return "<div class='photodiv' >" . makeImageURL($clientID) . makeNameCheckoutAction($clientID, $name) . "</div>";
+function makeDiv($name, $clientID, $equip) {
+  return "<div class='photodiv' >" . makeTable($name, $clientID, $equip) . "</div>";
+}
+function makeTable($name, $clientID, $equip){
+  return "<table class='clientTable'><tr><td class='clientImageTD'>" . makeImageURL($clientID) . 
+  "</td></tr><tr><td class='clientNameTD'>" . makeNameCheckoutAction($clientID, $name) . 
+  "</td></tr><tr><td class='clientEquipTD'>" . makeEquipList($equip) . "</td></tr></table>";
 }	
 function makeNameCheckoutAction($clientID, $name) {
   return "<p class='photoname' onclick=\"checkout('" . $clientID . "','" . $name . "')\">" . $name . "</p>";
 }
+function makeEquipList($equip){
+  return "<p class='equiplist'>" . $equip . "</p>";
+}
+
 ?>
