@@ -16,10 +16,10 @@ table.rawlogtable {
 .photodiv {
 	float: left;
 	width: 220px;
-	height: 220px;
 	text-align: center;
 	border: 1px solid black;
-	padding: 10px 10px 10px 10px;
+	margin: 2px 2px 2px 2px;
+	padding: 5px 5px 5px 5px;
 }
 
 .IDPhoto {
@@ -27,10 +27,37 @@ table.rawlogtable {
 }
 
 p.photoname {
-	margin: 10px 10px 0px 10px;
+	margin: 0px 0px 0px 0px;
+	padding: 0px 0px 0px 0px;
 	font-size: 200%;
 }
 
 p.lastrefreshtime {
 	
+}
+.clientTable {
+	border: 0px solid black;
+	margin: 0px 0px 0px 0px;
+	padding: 0px 0px 0px 0px;
+	width:220px;
+}
+.clientImageTD {	
+	border: 0px solid black;
+	margin: 0px 0px 0px 0px;
+	padding: 10px 0px 0px 0px;
+	height:180px;
+	width:200px;
+}
+.clientNameTD {
+	border: 0px  solid black;
+	margin: 0px 0px 0px 0px;
+	padding: 0px 0px 0px 0px;
+	height:40px;
+}
+.clientEquipTD{
+	border: 0px solid black;
+	margin: 0px 0px 0px 0px;
+	padding: 0px 0px 0px 0px;
+	height:50px;
+	font-size:100%;
 }

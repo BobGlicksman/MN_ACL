@@ -11,9 +11,11 @@
 include 'commonfunctions.php';
 
 // get the HTML skeleton
-$myfile = fopen("checkinreport.txt", "r") or die("Unable to open file!");
-$html = fread($myfile,filesize("checkinreport.txt"));
-fclose($myfile);
+
+$html = file_get_contents("checkinreporttest2.txt");
+if (!$html){
+  die("unable to open file");
+}
 
 // Get the data
 $ini_array = parse_ini_file("rfidconfig.ini", true);
@@ -45,12 +47,11 @@ GROUP BY yr, mnth
 ORDER BY yr, mnth;
 ";
 
-
-
 $result = mysqli_query($con, $selectSQLMembersPerMonth);
+$dataX = "";
+$dataY = "";
 
 // Construct the page
-
 if (mysqli_num_rows($result) > 0) {
 
 	// Get the data for each month into table rows
@@ -62,11 +63,21 @@ if (mysqli_num_rows($result) > 0) {
                  $row["mnth"],
                  $row["cnt"]
                  )     
-       		);
-    	
+           );
+      
+      if ($dataX == "") {
+        $dataX =  $row["yr"] . "/" . $row["mnth"];
+        $dataY =  $row["cnt"];
+      } else {
+        $dataX = $dataX . " " . $row["yr"] . "/" . $row["mnth"];
+        $dataY = $dataY . " " . $row["cnt"];
+      }
     	$tableRows = $tableRows . $thisTableRow;
     }
     
+    $html = str_replace("<<GRAPH1DATAX>>",$dataX,$html);
+    $html = str_replace("<<GRAPH1DATAY>>",$dataY,$html);
+
     $html = str_replace("<<TABLEHEADER_MembersPerMonth>>",
     	makeTR(
     		array( 
@@ -77,7 +88,7 @@ if (mysqli_num_rows($result) > 0) {
     		),
     	$html);
     $html = str_replace("<<TABLEROWS_MembersPerMonth>>", $tableRows,$html);
-    
+
 } else {
     echo "0 results";
 }
@@ -87,7 +98,6 @@ if (mysqli_num_rows($result) > 0) {
 
 $tableRows = "";
 
-  
 $selectSQLMembersPerDay = "
 SELECT COUNT(*) as cnt, dy, mnth, yr
 FROM
@@ -105,6 +115,8 @@ ORDER BY yr, mnth, dy;
 $result2 = mysqli_query($con, $selectSQLMembersPerDay);
 
 // Construct the page
+$dataX = "";
+$dataY = "";
 
 if (mysqli_num_rows($result2) > 0) {
 
@@ -119,10 +131,19 @@ if (mysqli_num_rows($result2) > 0) {
                  $row["cnt"]
                  )     
        		);
-    	
+      if ($dataX == "") {
+        $dataX =  $row["yr"] . "/" . $row["mnth"] . "/" . $row["dy"];
+        $dataY =  $row["cnt"];
+      } else {
+        $dataX = $dataX . " " . $row["yr"] . "/" . $row["mnth"] . "/" . $row["dy"];
+        $dataY = $dataY . " " . $row["cnt"];
+      }
     	$tableRows = $tableRows . $thisTableRow;
     }
     
+    $html = str_replace("<<GRAPH2DATAX>>",$dataX,$html);
+    $html = str_replace("<<GRAPH2DATAY>>",$dataY,$html);
+
     $html = str_replace("<<TABLEHEADER_MembersPerDay>>",
     	makeTR(
     		array( 
@@ -144,7 +165,5 @@ echo $html;
 mysqli_close($con);
 
 return;
-
-
 
 ?>
