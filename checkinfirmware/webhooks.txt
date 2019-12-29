@@ -109,4 +109,13 @@ file.
     }
 }
 
-
+{
+    "event": "GetDeviceConfig",
+    "url": "http://rfidsandbox.makernexuswiki.com/GetDeviceConfig.php",
+    "requestType": "GET",
+    "noDefaults": false,
+    "rejectUnauthorized": true,
+    "query": {
+        "cmd": "{{{PARTICLE_EVENT_VALUE}}}"
+    }
+}
