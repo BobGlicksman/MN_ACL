@@ -46,7 +46,11 @@ function returnDeviceList($con) {
     $getListSQL = 
     "SELECT deviceType, deviceName FROM stationConfig WHERE active = 1 order by deviceName;";
     $result = mysqli_query($con, $getListSQL);
-    if (mysqli_num_rows($result) > 0) { 
+    $numRows = 0;
+    if ($result) {
+        $numRows = mysqli_num_rows($result);
+    } 
+    if ($numRows > 0) { 
         $arr = array();
         while($row = mysqli_fetch_assoc($result)) {
             $arr[] = array(
