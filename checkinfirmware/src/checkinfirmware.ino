@@ -127,7 +127,6 @@
 ************************************************************************/
 #define MN_FIRMWARE_VERSION 1.42
 
-// Our RFID card encryption keys
 #include "rfidkeys.h"
 
 // Our UTILITIES
@@ -140,7 +139,6 @@
 
 int led = D0;  // You'll need to wire an LED to this one to see it blink.
 int led2 = D7; // This one is the built-in tiny one to the right of the USB jack
-
 
 //----------- Global Variables
 
@@ -155,6 +153,7 @@ String g_identifyCardResult = ""; // JSON formatted name:value pairs. ClientName
 bool g_checkInOutResponseValid = false;
 String g_checkInOutResponseBuffer = "";
 String g_checkInOutActionTaken = "";
+bool g_identifyCardResultIsValid = false;
 
 String g_recentErrors = "";
 String debug2 = "";
@@ -162,7 +161,17 @@ int debug3 = 0;
 int debug4 = 0;
 int debug5 = 0;
 
-String g_packages = ""; // Not implemented yet
+String g_packages = ""; // Not implemented yet xxx
+
+struct struct_stationConfig {
+    bool isValid = false;
+    int deviceType;
+    String deviceName;
+    String LCDName;
+    String photoDisplay;
+    String logEvent;
+    String OKKeywords;
+} g_stationConfig;
 
 struct struct_authTokenCheckIn {
    String token = ""; 
@@ -377,7 +386,7 @@ void reportCardError(uint8_t cardType){
 //--------------- particleCallbackMNLOGDB --------------------
 // 
 // This routine  is registered with the particle cloud to receive any
-// events that begin with this device and "mnlogdb". This routine will accept
+// events that begin with this device and "mnlogdb" or "fdb". This routine will accept
 // the callback and then call the appropriate handler.
 //
 void particleCallbackMNLOGDB (const char *event, const char *data) {
@@ -399,7 +408,11 @@ void particleCallbackMNLOGDB (const char *event, const char *data) {
 
         debugEvent("mnlogdbCheckinError: " + String(data));
 
-    } else {
+    } else if (eventName.indexOf(myDeviceID + "fdbGetStationConfig") >= 0) {
+
+        fdbReceiveStationConfig(event, data);
+
+    }else {
 
         debugEvent("unknown particle event 2: " + String(event));
 
@@ -528,7 +541,7 @@ void ezfReceiveCheckInToken (const char *event, const char *data)  {
     // accumulate response data
     g_tokenResponseBuffer = g_tokenResponseBuffer + data;
 
-    static int partsCnt = 0;
+    static int partsCnt = 0; //xxx
     partsCnt++;
     debugEvent ("Received CI token part "+ String(partsCnt) + String(data).substring(0,15) );
     
@@ -569,6 +582,8 @@ void ezfReceiveCheckInToken (const char *event, const char *data)  {
 */
  
 String clientInfoToJSON(int errCode, String errMsg, bool includeCardData){
+
+    //xxx maybe we should not pass in errcode/msg now that readCard does not call testCard
 
     const size_t capacity = JSON_OBJECT_SIZE(15);
     DynamicJsonDocument doc(capacity);
@@ -984,6 +999,78 @@ void mnlogdbCheckInOutResponse (const char *event, const char *data)  {
     }
 }
 
+// ----------------- clearStationConfig
+//
+//
+//
+void clearStationConfig() {
+
+    g_stationConfig.isValid = false;
+    g_stationConfig.deviceType = 0;
+    g_stationConfig.deviceName = "";
+    g_stationConfig.LCDName = "";
+    g_stationConfig.photoDisplay = "";
+    g_stationConfig.logEvent = "";
+    g_stationConfig.OKKeywords = "";
+
+}
+
+// --------------------- fdbGetStationConfig ------------
+//
+//
+//
+void fdbGetStationConfig() {
+
+    clearStationConfig();
+    String output = String(EEPROMdata.deviceType);
+    Particle.publish("fdbGetStationConfig", output, PRIVATE);
+
+}
+
+// ----------------- fdbReceiveStationConfig ----------
+//
+//  fdbReceiveStationConfig
+//
+void fdbReceiveStationConfig(const char *event, const char *data) {
+
+    const int capacity = JSON_OBJECT_SIZE(8) + 2*JSON_OBJECT_SIZE(8);
+    StaticJsonDocument<capacity> docJSON;
+   
+    char temp[3000]; //This has to be long enough for an entire JSON response
+    strcpy_safe(temp, data);
+
+    // will it parse?
+    DeserializationError err = deserializeJson(docJSON, temp );
+    JSONParseError =  err.c_str();
+    if (!err) {
+        JsonObject root_0 = docJSON[0];
+        //We have valid full JSON response 
+        if (root_0["deviceType"].as<int>() == EEPROMdata.deviceType) {
+            g_stationConfig.deviceType = root_0["deviceType"].as<int>();
+            g_stationConfig.deviceName = String(root_0["deviceName"].as<char*>());
+            g_stationConfig.LCDName = String(root_0["LCDName"].as<char*>());
+            g_stationConfig.logEvent = String(root_0["logEvent"].as<char*>());
+            g_stationConfig.photoDisplay = String(root_0["photoDisplay"].as<char*>());
+            g_stationConfig.OKKeywords = String(root_0["OKKeywords"].as<char*>());
+            g_stationConfig.isValid = true;
+
+            debugEvent ("have station config now ");
+
+        } else {
+            debugEvent("Station Config deviceType does not match. Expected: " 
+                    + String((int) EEPROMdata.deviceType) 
+                    + " received: " 
+                    + String(root_0["deviceType"].as<int>()) );
+            writeToLCD("Station Config", "data is bad");
+            // the admin loop will be waiting for the isValid member to be true.
+        }
+   
+    } else {
+        debugEvent ("Staion Config JSON parse error. " + String(temp));
+    }
+
+}
+
 // ----------------- ezfCheckInClient -------------------
 // 
 // Constructs a JSON for clientID and calls particle webhook ezfCheckInClient
@@ -1225,24 +1312,40 @@ int cloudIdentifyCard (String data) {
 
     if (g_adminCommand == acIDLE) {
 
-        if ( (!haveReturnedADoneStatus) && (g_clientInfo.isValid) ) {
-            // We have good data and we have not yet alerted the client
-            haveReturnedADoneStatus = true;
-            return 2;
+        if (!haveReturnedADoneStatus) {
+            
+            if (g_clientInfo.isValid)  {   
+                // We have good data and we have not yet alerted the client
+                haveReturnedADoneStatus = true;
+                return 2;
+
+            } else if (g_identifyCardResultIsValid) {
+
+                haveReturnedADoneStatus = true;
+                return 2;
+
+            } else {
+                haveReturnedADoneStatus = true;
+                return 1;
+            
+            }
+
         } else {
             // we are going to start a new identify card process 
             clearClientInfo();
             clearCardData();
+            g_identifyCardResult = "";
+            g_identifyCardResultIsValid = false;
             haveReturnedADoneStatus = false;
             g_adminCommandData = data;
             g_adminCommand = acIDENTIFYCARD; // admin loop will see this and change state
-            return 0;
+            return 1;
         }
 
     } else if (g_adminCommand == acIDENTIFYCARD){
         haveReturnedADoneStatus = false;
         return 1; // still working on it
-    } else if (g_clientInfo.isValid) {
+    } else if  (g_clientInfo.isValid) {  //(g_identifyCardResultIsValid) {
         // it is possible to get here, but timing makes it unlikely. Once we have
         // good data we go quickly to acIDLE
         haveReturnedADoneStatus = true;
@@ -1764,6 +1867,7 @@ enum idcState {
             idcState = idcCLEANUP;
         } else  {
             writeToLCD("Whose Card?", " ");
+            g_identifyCardResultIsValid = false;
 
             // test the card to determine its type
             uint8_t cardType = testCard();
@@ -1788,6 +1892,7 @@ enum idcState {
                 } else {
                     writeToLCD("Card read fail",g_cardData.cardStatus);
                     g_identifyCardResult = clientInfoToJSON(1,"Card read failed",true);
+                    g_identifyCardResultIsValid = true;
                     idcState = idcCLEANUP;
                 } 
 
@@ -1795,6 +1900,8 @@ enum idcState {
                 // got a card, but not a type we want
                 // report card error
                 reportCardError(cardType);
+                g_identifyCardResult = clientInfoToJSON(1,"Card read failed",true);
+                g_identifyCardResultIsValid = true;  //xxx how do we get the right answer into the JSON?
                 idcState = idcCLEANUP;
             }
         }
@@ -2167,7 +2274,8 @@ void setup() {
 
     // Needed for all devices
     Particle.subscribe(System.deviceID() + "ezf",particleCallbackEZF, MY_DEVICES);
-    Particle.subscribe(System.deviceID() + "mnlogdb",particleCallbackMNLOGDB, MY_DEVICES);
+    Particle.subscribe(System.deviceID() + "mnlogdb",particleCallbackMNLOGDB, MY_DEVICES); // older
+    Particle.subscribe(System.deviceID() + "fdb",particleCallbackMNLOGDB, MY_DEVICES); // newer
 
 
     // Used by device types for machine usage permission validation
@@ -2222,14 +2330,49 @@ void loop() {
 
     // Main Loop State
     enum mlsState {
+        mlsASKFORSTATIONCONFIG,
+        mlsWAITFORSTATIONCONFIG,
         mlsASKFORTOKEN,
         mlsDEVICELOOP, 
         mlsERROR
     };
     
-    static mlsState mainloopState = mlsASKFORTOKEN;
+    static mlsState mainloopState = mlsASKFORSTATIONCONFIG;
+    static unsigned long processStart = 0;
     
     switch (mainloopState) {
+    case mlsASKFORSTATIONCONFIG:
+        if ((EEPROMdata.deviceType == UNDEFINED_DEVICE) || (EEPROMdata.deviceType == CHECK_IN_DEVICE)) {
+           
+            // if type is undefined or checkin, then don't need config.
+            mainloopState = mlsASKFORTOKEN;
+
+        } else {
+            
+            // type is other than undefined or checkin, get config.
+            // Get config info from the Facility database
+            processStart = millis();
+            fdbGetStationConfig();
+            mainloopState = mlsWAITFORSTATIONCONFIG;
+
+        }
+
+        break;
+
+    case mlsWAITFORSTATIONCONFIG:
+        if (millis() - processStart > 20000 ) {
+
+            // Failed to get station config
+            writeToLCD("Get Station","Config failed");
+            mainloopState = mlsERROR;
+
+        } else if (g_stationConfig.isValid) {
+
+            mainloopState = mlsASKFORTOKEN;
+        }
+        // otherwise stay in this state 
+
+        break;
     
     case mlsASKFORTOKEN: 
         ezfGetCheckInToken();  // This is non blocking, call it to preemptively get a token 
@@ -2264,10 +2407,12 @@ void loop() {
         break;
     }
     case mlsERROR: 
+        mainloopState = mlsERROR; // No way out of this except a reboot
         break;
 
     default:
         writeToLCD("Unknown","mainLoopState");
+        mainloopState = mlsERROR;
         break;
     }
     
