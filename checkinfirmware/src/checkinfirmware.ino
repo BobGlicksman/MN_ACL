@@ -124,8 +124,9 @@
  *  1.40 deployed into production
  *  1.41 added ShopBot to allowed woodshop packages
  *  1.42 has new packages code that relies on mustache template to be used at the webhook
+ *  1.5  reads station config from Facility Database. Does not yet use the info.
 ************************************************************************/
-#define MN_FIRMWARE_VERSION 1.42
+#define MN_FIRMWARE_VERSION 1.5
 
 #include "rfidkeys.h"
 
@@ -1054,8 +1055,6 @@ void fdbReceiveStationConfig(const char *event, const char *data) {
             g_stationConfig.OKKeywords = String(root_0["OKKeywords"].as<char*>());
             g_stationConfig.isValid = true;
 
-            debugEvent ("have station config now ");
-
         } else {
             debugEvent("Station Config deviceType does not match. Expected: " 
                     + String((int) EEPROMdata.deviceType) 
@@ -1067,6 +1066,7 @@ void fdbReceiveStationConfig(const char *event, const char *data) {
    
     } else {
         debugEvent ("Staion Config JSON parse error. " + String(temp));
+        // the admin loop will be waiting for the isValid member to be true.
     }
 
 }
@@ -1423,12 +1423,12 @@ void loopWoodshopDoor() {
     
     switch (wsloopState) {
     case wslINIT:
-        writeToLCD("Woodshop Ready"," ");
+        writeToLCD(g_stationConfig.LCDName + " Ready"," ");
         wsloopState = wslWAITFORCARD;
         break;
     case wslWAITFORCARD: {
         digitalWrite(READY_LED,HIGH);
-        writeToLCD("Badge in for","Woodshop");
+        writeToLCD("Badge in for",g_stationConfig.LCDName);
         enumRetStatus retStatus = readTheCard();
         if (retStatus == COMPLETE_OK) {
             // move to the next step
@@ -1551,7 +1551,7 @@ void loopWoodshopDoor() {
             
             // log this to our DB 
             processStartMilliseconds = millis();
-            logToDB("Woodshop allowed", "", g_clientInfo.clientID, g_clientInfo.firstName );
+            logToDB(g_stationConfig.logEvent, "", g_clientInfo.clientID, g_clientInfo.firstName );
             
             wsloopState = wslSHOWWOODSHOPRESULT;
 
@@ -1564,7 +1564,7 @@ void loopWoodshopDoor() {
         if (millis() - processStartMilliseconds > 5000) {
             // took too long to get answer from our logging database
             String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
-            writeToLCD("Thanks for a tap", "Woodshop Ok" );
+            writeToLCD("Thanks for a tap", g_stationConfig.LCDName + " Ok" );
             digitalWrite(ADMIT_LED,HIGH);
             buzzerGoodBeepTwice();
             delay(1000);
@@ -1574,7 +1574,7 @@ void loopWoodshopDoor() {
 
         } else {
            
-            writeToLCD("Woodshop allowed", "Be Safe");
+            writeToLCD(g_stationConfig.LCDName + " allowed", "Be Safe");
             digitalWrite(ADMIT_LED,HIGH);
             buzzerGoodBeepTwice();
             delay(2000);
@@ -1588,7 +1588,7 @@ void loopWoodshopDoor() {
            
             if (g_checkInOutActionTaken.indexOf("Checked In") == 0) { 
                 String fullName = g_clientInfo.firstName + " " + g_clientInfo.lastName;
-                writeToLCD("Welcome","to Woodshop");
+                writeToLCD("Welcome","to " + g_stationConfig.LCDName);
                 digitalWrite(ADMIT_LED,HIGH);
                 buzzerGoodBeepTwice();
                 delay(1000);
@@ -2395,6 +2395,7 @@ void loop() {
             loopAdmin();
             break;
         case WOODSHOP:
+        case LASERS:
             loopWoodshopDoor();
             break;
         default:
