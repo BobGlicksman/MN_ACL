@@ -56,7 +56,7 @@ typedef enum {
     UNDEFINED_DEVICE = 0,
     CHECK_IN_DEVICE = 1,
     ADMIN_DEVICE = 2,
-    BOSSLASER = 3,
+    LASERS = 105,
     WOODSHOP = 4
 } enumDeviceConfigType;  // current value in EEPROMdata.deviceType
 

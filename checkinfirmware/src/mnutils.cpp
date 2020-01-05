@@ -236,8 +236,8 @@ String deviceTypeToString(enumDeviceConfigType deviceType){
     case ADMIN_DEVICE:
         msg = "Admin";
         break;
-    case BOSSLASER:
-        msg = "BossLaser";
+    case LASERS:
+        msg = "Lasers";
         break;
     case WOODSHOP:
         msg = "Woodshop";
