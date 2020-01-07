@@ -236,14 +236,8 @@ String deviceTypeToString(enumDeviceConfigType deviceType){
     case ADMIN_DEVICE:
         msg = "Admin";
         break;
-    case LASERS:
-        msg = "Lasers";
-        break;
-    case WOODSHOP:
-        msg = "Woodshop";
-        break;
     default:
-        msg = "ERR: UNKNOWN";
+        msg = "Setting Up";
         break;
     }
     return msg;

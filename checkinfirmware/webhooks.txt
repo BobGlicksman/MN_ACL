@@ -111,6 +111,7 @@ file.
 
 {
     "event": "fdbGetStationConfig",
+    "responseTopic": "{{PARTICLE_DEVICE_ID}}fdbGetStationConfig",
     "url": "http://rfidsandbox.makernexuswiki.com/fdbGetStationConfig.php",
     "requestType": "GET",
     "noDefaults": false,

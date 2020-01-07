@@ -312,6 +312,7 @@ int cloudSetDeviceType(String data) {
 
     if (deviceType == -1) {
         buzzerGoodBeepOnce();
+        return EEPROMdata.deviceType;
     } else if (deviceType) {
         logToDB("DeviceTypeChange" + deviceTypeToString( (enumDeviceConfigType) deviceType),"",0,"");
         EEPROMdata.deviceType = (enumDeviceConfigType) deviceType;
@@ -1207,17 +1208,21 @@ String isClientOkToCheckIn (){
 
 }
 
-// ------------ isClientOkForWoodshop --------------
+// ------------ isClientOkForEquip --------------
 //  This routine is where we check to see if we should allow
-//  the client to enter the woodshop or if we should deny them. This
-//  routine will use g_clientPackages to make the determination.
+//  the client to use the equipment or if we should deny them. This
+//  routine will use g_clientPackages and g_stationConfig.OKKeywords
+//  to make the determination.
 //    
 //  Returns "" if client is good and a 16 or less character message
 //      if not. Message suitable for display to user.
 //
-String isClientOkForWoodshop (){
+String isClientOkForEquip (){
 
-    // Test for a good account status
+    // Test for client to have correct packages
+    // XXX
+
+    // need to split OKKeywords and check each against the packagesString
 
     if ( g_clientPackages.packagesString.indexOf("Wood") > 0 ) {
         // They have a wood package, they are good to go
@@ -1228,7 +1233,7 @@ String isClientOkForWoodshop (){
         return "";
     } 
 
-    return "Wood Not Found";
+    return "Package Not Found";
 
 }
 
@@ -1399,11 +1404,11 @@ int cloudBurnCard(String data){
 
 }
 
-// ---------------------- LOOP FOR WOODSHOP ---------------------
+// ---------------------- LOOP FOR equipment station ---------------------
 // ----------------------                  ----------------------
-// This function is called from main loop when configured for Check In station. 
+// This function is called from main loop when configured for any device except admin or checkin 
 //
-void loopWoodshopDoor() {    
+void loopEquipStation() {    
     //WoodshopLoopStates
     enum wslState {
         wslINIT,
@@ -1413,8 +1418,8 @@ void loopWoodshopDoor() {
         wslASKFORCLIENTINFO, 
         wslWAITFORCLIENTINFO,
         wslWAITFORCLIENTPACKAGES, 
-        wslCHECKWOODSHOP, 
-        wslSHOWWOODSHOPRESULT,
+        wslCHECKEQUIPPERMISSION, 
+        wslSHOWEQUIPRESULT,
         wslERROR
     };
     
@@ -1505,7 +1510,7 @@ void loopWoodshopDoor() {
     case wslWAITFORCLIENTPACKAGES: 
         if (g_clientPackages.isValid ){
 
-            wsloopState = wslCHECKWOODSHOP;
+            wsloopState = wslCHECKEQUIPPERMISSION;
 
         } else {
             // timer to limit this state
@@ -1527,9 +1532,9 @@ void loopWoodshopDoor() {
 
         break;
 
-    case wslCHECKWOODSHOP: {
+    case wslCHECKEQUIPPERMISSION: {
 
-        String allowInMessage = isClientOkForWoodshop();
+        String allowInMessage = isClientOkForEquip();
         debugEvent("allowinmsg:" + allowInMessage);
 
         if ( allowInMessage.length() > 0 ) {
@@ -1541,25 +1546,25 @@ void loopWoodshopDoor() {
             digitalWrite(REJECT_LED,LOW);
             
             // log this to DB 
-            logToDB("Woodshop denied", allowInMessage, g_clientInfo.clientID, "");
+            logToDB(g_stationConfig.LCDName + " denied", allowInMessage, g_clientInfo.clientID, "");
 
             wsloopState = wslWAITFORCARD;
             
         } else {
         
-            debugEvent ("Woodshop checkin");
+            debugEvent (g_stationConfig.LCDName + " checkin");
             
             // log this to our DB 
             processStartMilliseconds = millis();
             logToDB(g_stationConfig.logEvent, "", g_clientInfo.clientID, g_clientInfo.firstName );
             
-            wsloopState = wslSHOWWOODSHOPRESULT;
+            wsloopState = wslSHOWEQUIPRESULT;
 
         }
         break;
     } 
 
-    case wslSHOWWOODSHOPRESULT:{
+    case wslSHOWEQUIPRESULT:{
 
         if (millis() - processStartMilliseconds > 5000) {
             // took too long to get answer from our logging database
@@ -2394,15 +2399,9 @@ void loop() {
         case ADMIN_DEVICE:
             loopAdmin();
             break;
-        case WOODSHOP:
-        case LASERS:
-            loopWoodshopDoor();
-            break;
         default:
-            // checking for individual machines in the loopStation routine
-            //if (EEPROMdata.deviceType > 100) {
-            //    loopStation(EEPROMdata.deviceType);
-            //}
+            // all other stations
+            loopEquipStation();
             break;
         }
         break;
