@@ -78,7 +78,7 @@ file.
 {
     "event": "ezfGetPackagesByClientID",
     "responseTopic": "{{PARTICLE_DEVICE_ID}}ezfGetPackagesByClientID",
-    "url": "https://api.ezfacility.com/v2/packages/{{{clientID}}}/active",
+    "url": "https://api.sandbox.ezfacility.com/v2/packages/{{{clientID}}}/active",
     "requestType": "GET",
     "noDefaults": true,
     "rejectUnauthorized": true,
