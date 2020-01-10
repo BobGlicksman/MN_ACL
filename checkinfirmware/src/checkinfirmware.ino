@@ -126,7 +126,7 @@
  *  1.42 has new packages code that relies on mustache template to be used at the webhook
  *  1.5  reads station config from Facility Database. Does not yet use the info.
 ************************************************************************/
-#define MN_FIRMWARE_VERSION 1.5
+#define MN_FIRMWARE_VERSION 1.52
 
 #include "rfidkeys.h"
 
@@ -1219,21 +1219,47 @@ String isClientOkToCheckIn (){
 //
 String isClientOkForEquip (){
 
-    // Test for client to have correct packages
-    // XXX
+    String keywords[10];
+    int numKeywords = 0;
 
-    // need to split OKKeywords and check each against the packagesString
-
-    if ( g_clientPackages.packagesString.indexOf("Wood") > 0 ) {
-        // They have a wood package, they are good to go
-        return "";
+    if (g_stationConfig.OKKeywords.length() == 0) {
+        //no keywords 
+    } else {
+        //split OKKeywords and check each against the packagesString
+        int currentComma = -1;
+        int nextComma = 0;
+        do {
+            nextComma = g_stationConfig.OKKeywords.indexOf(",",currentComma+1);
+            if (nextComma == -1) {
+                //last keyword 
+                nextComma =  g_stationConfig.OKKeywords.length();
+            } 
+            //another keyword
+            keywords[numKeywords] = g_stationConfig.OKKeywords.substring(currentComma+1,nextComma).trim();
+            debugEvent("found keyword:" + keywords[numKeywords]); //xxx
+            numKeywords++;
+            currentComma = nextComma;
+        } while ( nextComma < (int) g_stationConfig.OKKeywords.length() );
     }
-    if ( g_clientPackages.packagesString.indexOf("ShopBot") > 0 ) {
-        // They have a wood package, they are good to go
-        return "";
-    } 
 
-    return "Package Not Found";
+    // test client packages for the presence of any of the OK Keywords
+    bool keywordFound = false;
+    if (numKeywords == 0) {
+        keywordFound = true;
+    } else {
+        for (int i=0; i<numKeywords; i++) {
+            if (g_clientPackages.packagesString.indexOf(keywords[i]) > -1 ) {
+                keywordFound = true;
+            }
+        }
+    }
+
+    // return result
+    if (keywordFound) {
+        return "";
+    } else {
+        return "Package Not Found";
+    }
 
 }
 
