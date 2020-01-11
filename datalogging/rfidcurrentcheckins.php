@@ -58,7 +58,7 @@ if (mysqli_num_rows($result) > 0) {
                 $firstIteration = false;
             } else {
                 // create div for previous clientID
-                $thisDiv = makeDiv($currentFirstName , $currentClientID, $currentEquipment ) . "\r\n";
+                $thisDiv = makeDiv($currentFirstName , $currentClientID, $currentEquipment, $photoServer  ) . "\r\n";
             
                 // add div to output accumulation
                 $photodivs = $photodivs . $thisDiv;
