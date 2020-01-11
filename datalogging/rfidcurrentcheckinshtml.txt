@@ -13,7 +13,7 @@
 </head>
 
 <body>
-	<h1>These Members Checked In Today</h1>
+	<h1>These Members Are Checked In</h1>
 	<p class="lastrefreshtime"><<REFRESHTIME>></p>
 	
 	<<PHOTODIVS>>
