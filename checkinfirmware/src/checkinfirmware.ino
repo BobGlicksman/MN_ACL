@@ -314,11 +314,17 @@ int cloudSetDeviceType(String data) {
         buzzerGoodBeepOnce();
         return EEPROMdata.deviceType;
     } else if (deviceType) {
+        enumDeviceConfigType oldType = EEPROMdata.deviceType;
         logToDB("DeviceTypeChange" + deviceTypeToString( (enumDeviceConfigType) deviceType),"",0,"");
         EEPROMdata.deviceType = (enumDeviceConfigType) deviceType;
-        EEPROMWrite();
+        EEPROMWrite(); // push the new devtype into EEPROM 
         writeToLCD("Changed Type","rebooting");
-        System.reset();
+        digitalWrite(REJECT_LED, HIGH);
+        // reset variable so mainloop does not change LCD display 
+        // (I admit this is a bit of a hack, but we are going to reboot right away anyway and
+        //  until we do, we are technically the oldType. The type only changes on reboot.)
+        EEPROMdata.deviceType = oldType;  
+        rebootSet(1000);
         return 0;
     }
 
@@ -414,7 +420,7 @@ void particleCallbackMNLOGDB (const char *event, const char *data) {
 
         fdbReceiveStationConfig(event, data);
 
-    }else {
+    } else {
 
         debugEvent("unknown particle event 2: " + String(event));
 
