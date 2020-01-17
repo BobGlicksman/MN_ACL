@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"path": "Particle_SW/stationfirmware"
+		},
+		{
+			"path": "Particle_SW/ParticleCloudSoftware"
+		},
+		{
+			"path": "Facility_Database_SW/datalogging"
+		}
+	],
+	"settings": {
+		"cortex-debug.openocdPath": "${command:particle.getDebuggerOpenocdPath}"
+	}
+}

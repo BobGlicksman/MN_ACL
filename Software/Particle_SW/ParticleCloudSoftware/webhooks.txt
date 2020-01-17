@@ -1,0 +1,122 @@
+These are Particle.io webhooks needed by the client firmware.
+Each webhook is a JSON package. To use this, create a webhook then in the webhook editor
+click Custom Template and post one of these packages in the text box. 
+
+Note that private keys, accounts, and passwords have been removed from this
+file.
+
+{
+    "event": "RFIDLogging",
+    "url": "http://rfidsandbox.makernexuswiki.com/rfidcheckin.php",
+    "requestType": "POST",
+    "noDefaults": false,
+    "rejectUnauthorized": false
+}
+
+{
+    "event": "RFIDLogCheckInOut",
+    "responseTopic": "{{PARTICLE_DEVICE_ID}}mnlogdbCheckInOut",
+    "errorResponseTopic": "{{PARTICLE_DEVICE_ID}}mnlogdbCheckInOutError",
+    "url": "http://rfidsandbox.makernexuswiki.com/rfidcheckinout.php",
+    "requestType": "POST",
+    "noDefaults": false,
+    "rejectUnauthorized": false
+}
+
+{
+    "event": "ezfClientByMemberNumber",
+    "responseTopic": "{{PARTICLE_DEVICE_ID}}ezfClientByMemberNumber",
+    "url": "https://api.sandbox.ezfacility.com/v2/clients/membershipNumber={{{memberNumber}}}",
+    "requestType": "GET",
+    "noDefaults": true,
+    "rejectUnauthorized": true,
+    "responseTemplate": "",
+    "headers": {
+        "Authorization": "Bearer {{{access_token}}}",
+        "Accept": "application/json",
+        "ez-page-number": "1"
+    }
+}
+
+{
+    "event": "ezfClientByClientID",
+    "responseTopic": "{{PARTICLE_DEVICE_ID}}ezfClientByClientID",
+    "url": "https://api.sandbox.ezfacility.com/v2/clients/{{{clientID}}}",
+    "requestType": "GET",
+    "noDefaults": true,
+    "rejectUnauthorized": true,
+    "headers": {
+        "Authorization": "Bearer {{{access_token}}}",
+        "Accept": "application/json",
+        "ez-page-number": "1"
+    }
+}
+
+{
+    "event": "ezfCheckInToken",
+    "responseTopic": "{{PARTICLE_DEVICE_ID}}ezfCheckInToken",
+    "errorResponseTopic": "",
+    "url": "https://api.sandbox.ezfacility.com/token",
+    "requestType": "POST",
+    "noDefaults": true,
+    "rejectUnauthorized": true,
+    "responseTemplate": "",
+    "headers": {
+        "Authorization": "Basic NGRkNzk5NjA6NTU3YmFjMGRlZjRlMzE2OTFhMzhjM2U5MjdlNDA5YWQ=",
+        "Content-type": "application/x-www-form-urlencoded",
+        "Accept": "application/json"
+    },
+    "form": {
+        "grant_type": "password",
+        "username": "makernexusdev",
+        "password": "makernexusdev1",
+        "scope": "realm:tms"
+    }
+}
+
+
+{
+    "event": "ezfGetPackagesByClientID",
+    "responseTopic": "{{PARTICLE_DEVICE_ID}}ezfGetPackagesByClientID",
+    "url": "https://api.sandbox.ezfacility.com/v2/packages/{{{clientID}}}/active",
+    "requestType": "GET",
+    "noDefaults": true,
+    "rejectUnauthorized": true,
+    "responseTemplate": "{{#0}} {{ReservationType}}| {{/0}}\n{{#1}} {{ReservationType}}| {{/1}}\n{{#2}} {{ReservationType}}| {{/2}}\n{{#3}} {{ReservationType}}| {{/3}}\n{{#4}} {{ReservationType}}| {{/4}}\n{{#5}} {{ReservationType}}| {{/5}}\n{{#6}} {{ReservationType}}| {{/6}}\n{{#7}} {{ReservationType}}| {{/7}}\n{{#8}} {{ReservationType}}| {{/8}}\n{{#9}} {{ReservationType}}| {{/9}}\n{{#10}} {{ReservationType}}| {{/10}}\n{{#11}} {{ReservationType}}| {{/11}}\n{{#12}} {{ReservationType}}| {{/12}}\n{{#13}} {{ReservationType}}| {{/13}}\n{{#14}} {{ReservationType}}| {{/14}}\nEndOfPackages\n",
+    "headers": {
+        "Authorization": "Bearer {{{access_token}}}",
+        "Accept": "application/json",
+        "ez-page-number": "1"
+    }
+}
+
+
+{
+    "event": "ezfCheckInClient",
+    "responseTopic": "{{PARTICLE_DEVICE_ID}}ezfCheckInClient",
+    "url": "https://api.sandbox.ezfacility.com/v2/checkins/clientID/{{{clientID}}}",
+    "requestType": "POST",
+    "noDefaults": true,
+    "rejectUnauthorized": true,
+    "headers": {
+        "Authorization": "Bearer {{{access_token}}}",
+        "Accept": "application/json"
+    },
+    "form": {
+        "CheckInLocationID": "14170",
+        "CheckInStationID": "5487",
+        "BookedSessionsMessage": "junk for now"
+    }
+}
+
+{
+    "event": "fdbGetStationConfig",
+    "responseTopic": "{{PARTICLE_DEVICE_ID}}fdbGetStationConfig",
+    "url": "http://rfidsandbox.makernexuswiki.com/fdbGetStationConfig.php",
+    "requestType": "GET",
+    "noDefaults": false,
+    "rejectUnauthorized": true,
+    "query": {
+        "cmd": "{{{PARTICLE_EVENT_VALUE}}}"
+    }
+}
