@@ -12,7 +12,7 @@ include 'commonfunctions.php';
 
 // get the HTML skeleton
 
-$html = file_get_contents("checkinreporttest2.txt");
+$html = file_get_contents("checkinreport.txt");
 if (!$html){
   die("unable to open file");
 }
@@ -159,6 +159,32 @@ if (mysqli_num_rows($result2) > 0) {
 } else {
     echo "0 results";
 }
+
+// ------------- Report Data 3 ---------------
+
+$tableRows = "";
+
+$SQLDateRange = date("'Y-m-d'",strtotime("90 days ago")) . " AND " .  date("'Y-m-d'",time()) ;
+
+$selectSQLMembersLast90Days = "
+SELECT COUNT(DISTINCT clientID) as numUnique FROM rawdata 
+WHERE dateEventLocal BETWEEN "
+. $SQLDateRange .
+" and logEvent = 'Checked In';
+";
+
+$result3 = mysqli_query($con, $selectSQLMembersLast90Days);
+
+if (mysqli_num_rows($result3) > 0) {
+
+    $row = mysqli_fetch_assoc($result3);
+    $html = str_replace("<<UNIQUE90>>", $row["numUnique"],$html);
+
+} else {
+    $html = str_replace("<<UNIQUE90>>", "no results found",$html);
+}
+
+// ------------- final output ----------
 
 echo $html;
 

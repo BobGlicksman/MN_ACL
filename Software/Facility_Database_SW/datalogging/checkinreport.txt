@@ -21,6 +21,11 @@
 		<div id='graph2'></div>
 	</div>
 
+	<div style="float:left;">
+		<H2>Unique members in last 90 days:</H2>
+		<<UNIQUE90>> members 
+	</div>
+
 	<div style="float:left; clear:both">
 		<h1>Unique member checkins per month</h1>
 		<table class="rawlogtable">
