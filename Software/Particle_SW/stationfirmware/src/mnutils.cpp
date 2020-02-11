@@ -159,7 +159,7 @@ void debugEvent (String message) {
 //    logEvent - a short reason for logging ("checkin","reboot","error", etc)
 //    logData - optional freeform text up to 250 characters
 //    clientID - optional if this event was for a particular client 
-void publishToLogDB (String webhook, String logEvent, String logData, int clientID, String clientFirstName) {
+void publishToLogDB (String webhook, String logEvent, String logData, int clientID, String clientFirstName, String clientLastName) {
 
     const size_t capacity = JSON_OBJECT_SIZE(10);
     DynamicJsonDocument doc(capacity);
@@ -169,6 +169,7 @@ void publishToLogDB (String webhook, String logEvent, String logData, int client
     doc["deviceFunction"] =  deviceTypeToString(EEPROMdata.deviceType).c_str();
     doc["clientID"] = clientID;
     doc["firstName"] = clientFirstName.c_str();
+    doc["lastName"] = clientLastName.c_str();
     doc["logEvent"] = logEvent.c_str();
     doc["logData"] = logData.c_str();
 
@@ -182,15 +183,15 @@ void publishToLogDB (String webhook, String logEvent, String logData, int client
 
 }
 
-void logToDB(String logEvent, String logData, int clientID, String clientFirstName){
+void logToDB(String logEvent, String logData, int clientID, String clientFirstName, String clientLastName){
     
-    publishToLogDB("RFIDLogging", logEvent, logData, clientID, clientFirstName);
+    publishToLogDB("RFIDLogging", logEvent, logData, clientID, clientFirstName, clientLastName);
 
 }
 
-void logCheckInOut(String logEvent, String logData, int clientID, String clientFirstName) {
+void logCheckInOut(String logEvent, String logData, int clientID, String clientFirstName, String clientLastName) {
 
-    publishToLogDB("RFIDLogCheckInOut", logEvent, logData, clientID, clientFirstName);
+    publishToLogDB("RFIDLogCheckInOut", logEvent, logData, clientID, clientFirstName, clientLastName);
 
 }
 
