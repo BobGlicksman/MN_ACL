@@ -41,6 +41,7 @@ echo "<p>" . printJSONError(json_last_error());
 $dateEventLocal = cleanInput($myJSON["dateEventLocal"] );
 $deviceFunction =  cleanInput($myJSON["deviceFunction"] );
 $firstName =  cleanInput($myJSON["firstName"] );
+$lastName = cleanInput($myJSON["lastName"]);
 $clientID =  cleanInput($myJSON["clientID"] );
 $logEvent =  cleanInput($myJSON["logEvent"]);
 $logData =  cleanInput($myJSON["logData"] );
@@ -152,12 +153,32 @@ if (strpos(" " . $logEvent,"checkin allowed") == 1) {
     $returnMessage = "<ActionTaken>" . $returnMessage . "</ActionTaken>"; 
 
 } 
-
+// ------------------ respond to client
 echo $returnMessage;  
+
+// ------------------  Now update the clientInfo table
+$clientInfoSQL = "CALL sp_insert_update_clientInfo(<<CLIENTID>>,'<<FIRSTNAME>>','<<LASTNAME>>','<<DATELASTSEEN>>',<<ISCHECKEDIN>>);";
+
+$clientInfoSQL = str_replace("<<CLIENTID>>",$clientID,$clientInfoSQL);
+$clientInfoSQL = str_replace("<<LASTNAME>>",$lastName,$clientInfoSQL);
+$clientInfoSQL = str_replace("<<FIRSTNAME>>",$firstName,$clientInfoSQL);
+$clientInfoSQL = str_replace("<<DATELASTSEEN>>",$dateEventLocal,$clientInfoSQL);
+$clientInfoSQL = str_replace("<<ISCHECKEDIN>>","0",$clientInfoSQL);
+
+//echo "clientSQL:" . $clientInfoSQL;
+
+if (mysqli_query($con, $clientInfoSQL)) {
+    //echo "<p>update/insert ran successfully";
+} else {
+    echo "<p>Error: " . "<br>" . mysqli_error($con);
+}
+
 
 mysqli_close($con);
 
 return;
+
+//------------------------------------------------------------------------
 
 // Pass in a string headed for the db and clean it. This isn't
 // perfect, just meant to hold off some badness

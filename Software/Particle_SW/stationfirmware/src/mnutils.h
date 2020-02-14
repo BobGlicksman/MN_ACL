@@ -118,10 +118,10 @@ void debugEvent (String message);
 //    logEvent - a short reason for logging ("checkin","reboot","error", etc)
 //    logData - optional freeform text up to 250 characters
 //    clientID - optional if this event was for a particular client 
-void logToDB(String logEvent, String logData, int clientID, String clientFirstName);
+void logToDB(String logEvent, String logData, int clientID, String clientFirstName, String clientLastName);
 
 // similar to logToDB, but calls the webhook RFIDLogCheckInOut
-void logCheckInOut(String logEvent, String logData, int clientID, String clientFirstName);
+void logCheckInOut(String logEvent, String logData, int clientID, String clientFirstName, String clientLastName);
 
 // This is the return called by Particle cloud when the RFIDLogging webhook completes
 //
