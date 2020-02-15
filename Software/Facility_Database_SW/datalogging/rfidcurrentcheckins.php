@@ -46,6 +46,7 @@ if (mysqli_num_rows($result) > 0) {
     // output data of each row
     $currentClientID = "";
     $currentFirstName = "";
+    $currentDisplayClasses = "";
     $currentEquipment = "";
     $firstIteration = true;
     while($row = mysqli_fetch_assoc($result)) {
@@ -58,7 +59,7 @@ if (mysqli_num_rows($result) > 0) {
                 $firstIteration = false;
             } else {
                 // create div for previous clientID
-                $thisDiv = makeDiv($currentFirstName , $currentClientID, $currentEquipment, $photoServer  ) . "\r\n";
+                $thisDiv = makeDiv($currentDisplayClasses, $currentFirstName, $currentClientID, $currentEquipment, $photoServer  ) . "\r\n";
             
                 // add div to output accumulation
                 $photodivs = $photodivs . $thisDiv;
@@ -68,6 +69,7 @@ if (mysqli_num_rows($result) > 0) {
             $currentFirstName = $row["firstName"];
             $currentEquipment = $row["photoDisplay"];
             $currentClientID = $row["clientID"];
+            $currentDisplayClasses = $row["displayClasses"];
 
         } else {
 
@@ -77,7 +79,7 @@ if (mysqli_num_rows($result) > 0) {
 
     }
     // last element from loop
-    $thisDiv = makeDiv($currentFirstName , $currentClientID, $currentEquipment, $photoServer ) . "\r\n";
+    $thisDiv = makeDiv($currentDisplayClasses, $currentFirstName , $currentClientID, $currentEquipment, $photoServer ) . "\r\n";
     $photodivs = $photodivs . $thisDiv;
 
     $html = str_replace("<<PHOTODIVS>>",$photodivs, $html);
@@ -94,11 +96,13 @@ mysqli_close($con);
 
 return;
 
+// ------------------------------------------------------------
+
 function makeImageURL($data, $photoServer) {
 	return "<img class='IDPhoto' alt='no photo' src='" . $photoServer . $data . ".jpg'>";
 }
-function makeDiv($name, $clientID, $equip, $photoServer) {
-  return "<div class='photodiv' >" . makeTable($name, $clientID, $equip, $photoServer) . "</div>";
+function makeDiv($classes, $name, $clientID, $equip, $photoServer) {
+  return "<div class='photodiv " . $classes . "' >" . makeTable($name, $clientID, $equip, $photoServer) . "</div>";
 }
 function makeTable($name, $clientID, $equip, $photoServer){
   return "<table class='clientTable'><tr><td class='clientImageTD'>" . makeImageURL($clientID, $photoServer) . 

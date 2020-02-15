@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="utf-8">
-  <title>Members Checked In Today</title>
+  <title>Members Checked In Now</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   <link href="style.css" rel="stylesheet">
