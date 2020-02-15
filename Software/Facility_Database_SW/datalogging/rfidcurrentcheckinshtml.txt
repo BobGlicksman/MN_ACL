@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="utf-8">
-  <title>Members Checked In Today</title>
+  <title>Members Checked In Now</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   <link href="style.css" rel="stylesheet">
@@ -14,10 +14,16 @@
 
 <body>
 	<h1>These Members Are Checked In</h1>
-	<p class="lastrefreshtime"><<REFRESHTIME>></p>
-	
-	<<PHOTODIVS>>
-
+  <div>
+    <div class="legenddiv staff" style="float:left">Staff Members</div>
+    <div style="float:left">
+	    <p class="lastrefreshtime"><<REFRESHTIME>></p>  
+    </div>
+    
+  </div>
+	<div style="clear:both">
+  	<<PHOTODIVS>>
+  </div>
 </body>
 
 </html>

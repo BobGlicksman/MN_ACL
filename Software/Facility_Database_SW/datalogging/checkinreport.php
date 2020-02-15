@@ -164,7 +164,7 @@ if (mysqli_num_rows($result2) > 0) {
 
 $tableRows = "";
 
-$SQLDateRange = date("'Y-m-d'",strtotime("90 days ago")) . " AND " .  date("'Y-m-d'",time()) ;
+$SQLDateRange = date("'Y-m-d'",strtotime("60 days ago")) . " AND " .  date("'Y-m-d'",time()) ;
 
 $selectSQLMembersLast90Days = "
 SELECT COUNT(DISTINCT clientID) as numUnique FROM rawdata 

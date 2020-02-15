@@ -4,6 +4,7 @@ DELIMITER $$
 -- that shows photos of the members who are currently checked in to 
 -- the facility: rfidcurrentcheckins.php
 
+BEGIN $$
 
 DROP PROCEDURE IF EXISTS sp_checkedInDisplay $$
 
@@ -50,11 +51,14 @@ ON a.clientID = p.clientID
 ;
 
 -- add the photoDisplay column and return the final query
-SELECT DISTINCT photoDisplay, clientID, firstName
+SELECT DISTINCT photoDisplay, a.clientID, a.firstName, c.displayClasses
 FROM tmp_client_taps a 
 LEFT JOIN stationConfig b 
 ON a.logEvent = b.logEvent
+LEFT JOIN clientInfo c
+ON a.clientID = c.clientID
 ORDER BY firstName, photoDisplay
 ;
 
 END$$
+

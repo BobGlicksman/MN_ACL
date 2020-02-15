@@ -4,6 +4,8 @@ DELIMITER $$
 -- clientID in the table. It either inserts a new row or updates an existing
 -- row with the parameters passed in.
 
+BEGIN $$
+
 DROP PROCEDURE IF EXISTS sp_insert_update_clientInfo$$
 
 CREATE DEFINER=`makernexuswiki`@`localhost` PROCEDURE `sp_insert_update_clientInfo` (
