@@ -23,6 +23,15 @@ table.rawlogtable {
 	border-width: 5px;
 }
 
+.legenddiv {
+	float:left;	
+	border: 1px solid lightgray;
+	margin: 2px 2px 2px 2px;
+	padding: 5px 5px 5px 5px;
+	border-width: 5px;
+	
+}
+
 .staff {
 	border-color: blueviolet;
 	border-width: 5px;
