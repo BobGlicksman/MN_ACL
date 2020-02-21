@@ -37,9 +37,13 @@ $selectSQLMembersPerMonth = "
 SELECT COUNT(*) as cnt, mnth, yr
 FROM
 (
-SELECT MONTH(dateEventLocal) as mnth, YEAR(dateEventLocal) as yr, clientID, firstName, logEvent FROM `rawdata` 
+SELECT MONTH(dateEventLocal) as mnth, YEAR(dateEventLocal) as yr, rd.clientID, rd.firstName, logEvent 
+FROM `rawdata` rd
+LEFT JOIN clientInfo ci
+ON rd.clientID = ci.clientID
 WHERE dateEventLocal > '20191001'
   and logEvent = 'Checked In'
+  and (TRIM(displayClasses) <> 'staff' or displayClasses is NULL)
 group by YEAR(dateEventLocal), MONTH(dateEventLocal), clientID
 order by YEAR(dateEventLocal), MONTH(dateEventLocal)
 ) as X
@@ -99,17 +103,21 @@ if (mysqli_num_rows($result) > 0) {
 $tableRows = "";
 
 $selectSQLMembersPerDay = "
-SELECT COUNT(*) as cnt, dy, mnth, yr
+SELECT COUNT(*) as cnt, dy, mnth, yr, DOY
 FROM
 (
-SELECT DAY(dateEventLocal) as dy, MONTH(dateEventLocal) as mnth, YEAR(dateEventLocal) as yr, clientID, firstName, logEvent FROM `rawdata` 
+SELECT DAYOFYEAR(dateEventLocal) as DOY, DAY(dateEventLocal) as dy, MONTH(dateEventLocal) as mnth, YEAR(dateEventLocal) as yr, rd.clientID, rd.firstName, logEvent 
+FROM `rawdata` rd
+LEFT JOIN clientInfo ci
+ON rd.clientID = ci.clientID
 WHERE dateEventLocal > '20191001'
   and logEvent = 'Checked In'
+  and (TRIM(displayClasses) <> 'staff' or displayClasses is NULL)
 group by YEAR(dateEventLocal), MONTH(dateEventLocal), DAY(dateEventLocal), clientID
 order by YEAR(dateEventLocal), MONTH(dateEventLocal), DAY(dateEventLocal)
 ) as X
-GROUP BY yr, mnth, dy
-ORDER BY yr, mnth, dy;
+GROUP BY yr, mnth, dy, DOY
+ORDER BY yr, mnth, dy, DOY;
 ";
 
 $result2 = mysqli_query($con, $selectSQLMembersPerDay);
@@ -120,25 +128,37 @@ $dataY = "";
 
 if (mysqli_num_rows($result2) > 0) {
 
-	// Get the data for each month into table rows
-	$previousClientID = "---";
-    while($row = mysqli_fetch_assoc($result2)) {
-    	
-    	$thisTableRow = makeTR( array (
-                 $row["yr"], 
-                 $row["mnth"],
-                 $row["dy"],
-                 $row["cnt"]
-                 )     
-       		);
-      if ($dataX == "") {
-        $dataX =  $row["yr"] . "/" . $row["mnth"] . "/" . $row["dy"];
-        $dataY =  $row["cnt"];
-      } else {
-        $dataX = $dataX . " " . $row["yr"] . "/" . $row["mnth"] . "/" . $row["dy"];
-        $dataY = $dataY . " " . $row["cnt"];
+	// Get the data for each day into table rows
+  $previousClientID = "---";
+  $previousDOY = 0;
+  while($row = mysqli_fetch_assoc($result2)) {
+    
+    $thisDOY = intval($row["DOY"]);
+    
+    $thisTableRow = makeTR( array (
+                $row["yr"], 
+                $row["mnth"],
+                $row["dy"],
+                $row["cnt"]
+                )     
+        );
+    if ($dataX == "") {
+      // first row
+      $previousDOY = $thisDOY;
+      $dataX =  $row["yr"] . "/" . $row["mnth"] . "/" . $row["dy"];
+      $dataY =  $row["cnt"];
+    } else {
+      while ($thisDOY > ($previousDOY + 1)) {
+        // if we have a gap in day of year, add 0 data values
+        $previousDOY = $previousDOY + 1;
+        $dataX = $dataX . " " . $previousDOY;
+        $dataY = $dataY . " 0";
       }
-    	$tableRows = $tableRows . $thisTableRow;
+      $previousDOY = $thisDOY;
+      $dataX = $dataX . " " . $row["yr"] . "/" . $row["mnth"] . "/" . $row["dy"];
+      $dataY = $dataY . " " . $row["cnt"];
+    }
+    $tableRows = $tableRows . $thisTableRow;
     }
     
     $html = str_replace("<<GRAPH2DATAX>>",$dataX,$html);
@@ -167,10 +187,14 @@ $tableRows = "";
 $SQLDateRange = date("'Y-m-d'",strtotime("60 days ago")) . " AND " .  date("'Y-m-d'",time()) ;
 
 $selectSQLMembersLast90Days = "
-SELECT COUNT(DISTINCT clientID) as numUnique FROM rawdata 
+SELECT COUNT(DISTINCT rd.clientID) as numUnique
+FROM rawdata rd
+LEFT JOIN clientInfo ci
+ON rd.clientID = ci.clientID
 WHERE dateEventLocal BETWEEN "
 . $SQLDateRange .
-" and logEvent = 'Checked In';
+" and logEvent = 'Checked In'
+  and (TRIM(displayClasses) <> 'staff' OR displayClasses is NULL);
 ";
 
 $result3 = mysqli_query($con, $selectSQLMembersLast90Days);
