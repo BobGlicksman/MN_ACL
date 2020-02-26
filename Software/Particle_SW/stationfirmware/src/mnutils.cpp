@@ -11,10 +11,11 @@ enumRetStatus  eRetStatus;
 enumAdminCommand g_adminCommand = acIDLE;
 String g_adminCommandData = "";
 
-enumDeviceConfigType  eDeviceConfigType;
+int  eDeviceConfigType;
 
 struct_clientInfo g_clientInfo;
 structEEPROMdata EEPROMdata;
+struct_stationConfig  g_stationConfig;
 
 String JSONParseError = "";
 
@@ -166,7 +167,7 @@ void publishToLogDB (String webhook, String logEvent, String logData, int client
 
     String idea2 = Time.format(Time.now(), "%F %T");
     doc["dateEventLocal"] = idea2.c_str();
-    doc["deviceFunction"] =  deviceTypeToString(EEPROMdata.deviceType).c_str();
+    doc["deviceFunction"] =  g_stationConfig.deviceName.c_str();
     doc["clientID"] = clientID;
     doc["firstName"] = clientFirstName.c_str();
     doc["lastName"] = clientLastName.c_str();
@@ -219,30 +220,9 @@ void EEPROMRead() {
     int addr = 0;
     EEPROM.get(addr,EEPROMdata);
     if (EEPROMdata.MN_Identifier != MN_EPROM_ID) {
-        EEPROMdata.deviceType = UNDEFINED_DEVICE;
+        EEPROMdata.deviceType = DEVICETYPE_UNDEFINED;
     }
 }
-
-// Convert eDeviceConfigType to human readable for LCD
-//
-String deviceTypeToString(enumDeviceConfigType deviceType){
-    String msg = "";
-    switch (deviceType) {
-    case UNDEFINED_DEVICE:
-        msg = "UNDEFINED_DEVICE";
-        break;
-    case CHECK_IN_DEVICE:
-        msg = "Check In";
-        break;
-    case ADMIN_DEVICE:
-        msg = "Admin";
-        break;
-    default:
-        msg = "Setting Up";
-        break;
-    }
-    return msg;
-} 
 
 
 void clearClientInfo() {
@@ -256,4 +236,20 @@ void clearClientInfo() {
     g_clientInfo.memberNumber = "";
     g_clientInfo.amountDue = 0;
     
+}
+
+// ----------------- setStationConfig ----------
+//
+//  setStationConfig
+//
+void setStationConfig(int deviceType, String deviceName, String LCDName, String logEvent, String photoDisplay, String OKKeywords) {
+
+    g_stationConfig.deviceType = deviceType;
+    g_stationConfig.deviceName = deviceName;
+    g_stationConfig.LCDName = LCDName;
+    g_stationConfig.logEvent = logEvent;
+    g_stationConfig.photoDisplay = photoDisplay;
+    g_stationConfig.OKKeywords = OKKeywords;
+    g_stationConfig.isValid = true;
+
 }
