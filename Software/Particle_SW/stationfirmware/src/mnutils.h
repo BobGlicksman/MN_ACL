@@ -33,6 +33,19 @@ extern LiquidCrystal lcd;
 #define MN_EPROM_ID 453214  //This value is written to the EEPROM to show that the
                             //data is ours. Change this and every device will have to
                             //be configured again.
+#define DEVICETYPE_UNDEFINED 0
+#define DEVICETYPE_CHECKIN 1
+#define DEVICETYPE_ADMIN 2
+
+struct struct_stationConfig {
+    bool isValid = false;
+    int deviceType;
+    String deviceName;
+    String LCDName;
+    String photoDisplay;
+    String logEvent;
+    String OKKeywords;
+} ;
 
 typedef enum  {
     IN_PROCESS = 1,
@@ -51,20 +64,13 @@ typedef enum {
 
 extern enumAdminCommand g_adminCommand;
 extern String g_adminCommandData;
-
-typedef enum {
-    UNDEFINED_DEVICE = 0,
-    CHECK_IN_DEVICE = 1,
-    ADMIN_DEVICE = 2,
-    LASERS = 105,
-    WOODSHOP = 4
-} enumDeviceConfigType;  // current value in EEPROMdata.deviceType
+extern struct_stationConfig g_stationConfig;
 
 // you can add more fields to the end of this structure, just don't change
 // the order or size of any existing fields.
 struct structEEPROMdata {
     int MN_Identifier = 11111111;  // set to MN_EPROM_ID when we write to EEPROM
-    enumDeviceConfigType deviceType = UNDEFINED_DEVICE;  // Hold the value that drives the behavior of 
+    int deviceType = 0;  // Hold the value that drives the behavior of 
                          // this device. Set via Cloud Function. 
 } ;
 
@@ -137,10 +143,9 @@ void EEPROMWrite ();
 //
 void EEPROMRead();
 
-// Convert eDeviceConfigType to human readable for LCD
-//
-String deviceTypeToString(enumDeviceConfigType deviceType);
-
 void clearClientInfo();
+
+void setStationConfig(int deviceType, String deviceName, String LCDName, String logEvent, String photoDisplay, String OKKeywords);
+
 
 #endif

@@ -12,6 +12,8 @@
 </head>
 
 <body>
+	<H2>Summary of Member Checkins</H2>
+	<p>Excludes staff members
 
 	<div style="float:left;">
 		<div id='graph1'></div>
