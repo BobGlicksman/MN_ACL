@@ -1,5 +1,5 @@
 {
-    "particle.targetDevice": "mn_jim",
-    "particle.firmwareVersion": "1.4.2",
+    "particle.targetDevice": "mn_devCamel",
+    "particle.firmwareVersion": "1.5.0-rc.1",
     "particle.targetPlatform": "argon"
 }
