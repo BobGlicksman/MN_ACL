@@ -304,10 +304,12 @@ int cloudSetDeviceType(String data) {
 
     int deviceType = data.toInt();
 
+    debugEvent("devtypeinput: " + String(deviceType));
+
     if (deviceType == -1) {
         buzzerGoodBeepOnce();
         return EEPROMdata.deviceType;
-    } else if (deviceType) {
+    } else if ((deviceType) or (data == "0")) {
         int oldType = EEPROMdata.deviceType;
         logToDB("DeviceTypeChange" +  deviceType,"",0,"","");
         EEPROMdata.deviceType = deviceType;
