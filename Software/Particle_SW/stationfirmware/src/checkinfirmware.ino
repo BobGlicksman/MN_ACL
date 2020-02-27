@@ -126,8 +126,9 @@
  *  1.42 has new packages code that relies on mustache template to be used at the webhook
  *  1.5  reads station config from Facility Database. Does not yet use the info.
  *  1.6  added last name to fdb logging
+ *  1.61 removed enum for dev type, instead relying on fdb for configuration info
 ************************************************************************/
-#define MN_FIRMWARE_VERSION 1.6
+#define MN_FIRMWARE_VERSION 1.61
 
 #include "rfidkeys.h"
 
@@ -165,15 +166,7 @@ int debug5 = 0;
 
 String g_packages = ""; // Not implemented yet xxx
 
-struct struct_stationConfig {
-    bool isValid = false;
-    int deviceType;
-    String deviceName;
-    String LCDName;
-    String photoDisplay;
-    String logEvent;
-    String OKKeywords;
-} g_stationConfig;
+
 
 struct struct_authTokenCheckIn {
    String token = ""; 
@@ -315,9 +308,9 @@ int cloudSetDeviceType(String data) {
         buzzerGoodBeepOnce();
         return EEPROMdata.deviceType;
     } else if (deviceType) {
-        enumDeviceConfigType oldType = EEPROMdata.deviceType;
-        logToDB("DeviceTypeChange" + deviceTypeToString( (enumDeviceConfigType) deviceType),"",0,"","");
-        EEPROMdata.deviceType = (enumDeviceConfigType) deviceType;
+        int oldType = EEPROMdata.deviceType;
+        logToDB("DeviceTypeChange" +  deviceType,"",0,"","");
+        EEPROMdata.deviceType = deviceType;
         EEPROMWrite(); // push the new devtype into EEPROM 
         writeToLCD("Changed Type","rebooting");
         digitalWrite(REJECT_LED, HIGH);
@@ -1055,13 +1048,22 @@ void fdbReceiveStationConfig(const char *event, const char *data) {
         JsonObject root_0 = docJSON[0];
         //We have valid full JSON response 
         if (root_0["deviceType"].as<int>() == EEPROMdata.deviceType) {
-            g_stationConfig.deviceType = root_0["deviceType"].as<int>();
-            g_stationConfig.deviceName = String(root_0["deviceName"].as<char*>());
-            g_stationConfig.LCDName = String(root_0["LCDName"].as<char*>());
-            g_stationConfig.logEvent = String(root_0["logEvent"].as<char*>());
-            g_stationConfig.photoDisplay = String(root_0["photoDisplay"].as<char*>());
-            g_stationConfig.OKKeywords = String(root_0["OKKeywords"].as<char*>());
-            g_stationConfig.isValid = true;
+
+            int devType = root_0["deviceType"].as<int>();
+            String deviceName =  root_0["deviceName"].as<char*>();
+            String LCDName = root_0["LCDName"].as<char*>();
+            String logEvent = root_0["logEvent"].as<char*>();
+            String photoDisplay = root_0["photoDisplay"].as<char*>();
+            String OKKeywords = root_0["OKKeywords"].as<char*>();
+
+            setStationConfig(
+                devType,
+                deviceName,
+                LCDName,
+                logEvent,
+                photoDisplay,
+                OKKeywords
+            );
 
         } else {
             debugEvent("Station Config deviceType does not match. Expected: " 
@@ -1078,6 +1080,8 @@ void fdbReceiveStationConfig(const char *event, const char *data) {
     }
 
 }
+
+
 
 // ----------------- ezfCheckInClient -------------------
 // 
@@ -2215,6 +2219,12 @@ void loopAdmin() {
 
 }
 
+// ---------- XXX cloud funtion to help troubleshoot the LCD scramble error 
+int cloudInitLCD (String data){
+    lcd.begin(16,2);
+    return 0;
+}
+
 
 // --------------------- SETUP -------------------
 // This routine runs only once upon reset
@@ -2302,6 +2312,8 @@ void setup() {
     //Particle.variable ("debug4", debug4);
     success = Particle.function("ClientByMemberNumber", ezfClientByMemberNumber);
     success = Particle.function("ClientByClientID", ezfClientByClientIDCloud);
+
+    success = Particle.function("InitLCD", cloudInitLCD);
  
     // Used by all device types
     success = Particle.function("SetDeviceType", cloudSetDeviceType);
@@ -2348,7 +2360,7 @@ void setup() {
     responseRFIDKeys("junk", RFIDKeysJSON); //xxx remove parameter
 
     // Signal ready to go
-    writeToLCD(deviceTypeToString(EEPROMdata.deviceType),"ver. " + String(MN_FIRMWARE_VERSION));
+    writeToLCD(g_stationConfig.LCDName,"ver. " + String(MN_FIRMWARE_VERSION));
     buzzerGoodBeepTwice();
     //flash the D7 LED twice
     for (int i = 0; i < 2; i++) {
@@ -2380,9 +2392,17 @@ void loop() {
     
     switch (mainloopState) {
     case mlsASKFORSTATIONCONFIG:
-        if ((EEPROMdata.deviceType == UNDEFINED_DEVICE) || (EEPROMdata.deviceType == CHECK_IN_DEVICE)) {
+        if ((EEPROMdata.deviceType == DEVICETYPE_UNDEFINED) || (EEPROMdata.deviceType == DEVICETYPE_CHECKIN)) {
            
             // if type is undefined or checkin, then don't need config.
+            if (EEPROMdata.deviceType == DEVICETYPE_UNDEFINED) {
+                setStationConfig( DEVICETYPE_UNDEFINED, "Undefined","Undefined","Undefined","","");
+            } else if (EEPROMdata.deviceType == DEVICETYPE_CHECKIN) {
+                setStationConfig( DEVICETYPE_CHECKIN, "CheckIn", "Check In","Check In","","");
+            } else {
+                setStationConfig( 99999,"code error 1","code error 1","code error 1","","" );
+            }
+
             mainloopState = mlsASKFORTOKEN;
 
         } else {
@@ -2423,13 +2443,13 @@ void loop() {
         // in this state forever. It calls out to the correct device code and
         // the "loop" continues there
         switch (EEPROMdata.deviceType) {
-        case UNDEFINED_DEVICE:
+        case DEVICETYPE_UNDEFINED:
             loopUndefinedDevice();
             break;
-        case CHECK_IN_DEVICE:
+        case DEVICETYPE_CHECKIN:
             loopCheckIn();
             break;
-        case ADMIN_DEVICE:
+        case DEVICETYPE_ADMIN:
             loopAdmin();
             break;
         default:
