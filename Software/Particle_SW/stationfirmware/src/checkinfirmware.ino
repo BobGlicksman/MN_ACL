@@ -304,12 +304,14 @@ int cloudSetDeviceType(String data) {
 
     int deviceType = data.toInt();
 
+    debugEvent("devtypeinput: " + String(deviceType));
+
     if (deviceType == -1) {
         buzzerGoodBeepOnce();
         return EEPROMdata.deviceType;
-    } else if (deviceType) {
+    } else if ((deviceType) or (data == "0")) {
         int oldType = EEPROMdata.deviceType;
-        logToDB("DeviceTypeChange" +  deviceType,"",0,"","");
+        logToDB("DeviceTypeChange", String(deviceType),0,"","");
         EEPROMdata.deviceType = deviceType;
         EEPROMWrite(); // push the new devtype into EEPROM 
         writeToLCD("Changed Type","rebooting");
@@ -2230,6 +2232,53 @@ int cloudInitLCD (String data){
 // This routine runs only once upon reset
 void setup() {
 
+    Particle.variable ("ClientID", g_clientInfo.clientID);
+    Particle.variable ("ContractStatus",g_clientInfo.contractStatus);
+    Particle.variable ("recentErrors",g_recentErrors);
+    Particle.variable ("JSONParseError", JSONParseError);
+      
+    int success = 0; 
+    if (success) {}; // xxx to remove warning, but should we check this below?
+
+    // The following are useful for debugging
+    //Particle.variable ("RFIDCardKey", g_clientInfo.RFIDCardKey);
+    //Particle.variable ("g_Packages",g_packages);
+    //success = Particle.function("GetCheckInToken", ezfGetCheckInTokenCloud);
+    // xxx
+    //Particle.variable ("debug2", debug2);
+    //Particle.variable ("debug3", debug3);
+    //Particle.variable ("debug4", debug4);
+    success = Particle.function("ClientByMemberNumber", ezfClientByMemberNumber);
+    success = Particle.function("ClientByClientID", ezfClientByClientIDCloud);
+
+    success = Particle.function("InitLCD", cloudInitLCD);
+ 
+    // Used by all device types
+    success = Particle.function("SetDeviceType", cloudSetDeviceType);
+    // xxx limit of 4 handlers??? Particle.subscribe(System.deviceID() + "RFIDLoggingReturn", RFIDLoggingReturn, MY_DEVICES);
+
+    // Used to test CheckIn
+    success = Particle.function("RFIDCardRead", cloudRFIDCardRead);
+
+    // Needed for all devices
+    Particle.subscribe(System.deviceID() + "ezf",particleCallbackEZF, MY_DEVICES);
+    Particle.subscribe(System.deviceID() + "mnlogdb",particleCallbackMNLOGDB, MY_DEVICES); // older
+    Particle.subscribe(System.deviceID() + "fdb",particleCallbackMNLOGDB, MY_DEVICES); // newer
+
+
+    // Used by device types for machine usage permission validation
+    //success = Particle.function("PackagesByClientID",ezfGetPackagesByClientID);
+    //Particle.subscribe(System.deviceID() + "ezfGetPackagesByClientID",ezfReceivePackagesByClientID, MY_DEVICES);
+
+    // Used by Admin Device
+    Particle.function("queryMember",cloudQueryMember);
+    Particle.variable("queryMemberResult",g_queryMemberResult);
+    Particle.function("burnCard",cloudBurnCard);
+    Particle.function("resetCard",cloudResetCardToFresh);
+    Particle.function("identifyCard",cloudIdentifyCard);
+    Particle.variable("identifyCardResult",g_identifyCardResult); // xxx should be queryCardInfoResult
+
+
     System.on(firmware_update, firmwareupdatehandler);
 
     // Gawd, dealing with dst!
@@ -2294,53 +2343,8 @@ void setup() {
     
     writeToLCD("Initializing","Particle Cloud");
 
-    Particle.variable ("ClientID", g_clientInfo.clientID);
-    Particle.variable ("ContractStatus",g_clientInfo.contractStatus);
-    Particle.variable ("recentErrors",g_recentErrors);
-    Particle.variable ("JSONParseError", JSONParseError);
-      
-    int success = 0; 
-    if (success) {}; // xxx to remove warning, but should we check this below?
-
-    // The following are useful for debugging
-    //Particle.variable ("RFIDCardKey", g_clientInfo.RFIDCardKey);
-    //Particle.variable ("g_Packages",g_packages);
-    //success = Particle.function("GetCheckInToken", ezfGetCheckInTokenCloud);
-    // xxx
-    //Particle.variable ("debug2", debug2);
-    //Particle.variable ("debug3", debug3);
-    //Particle.variable ("debug4", debug4);
-    success = Particle.function("ClientByMemberNumber", ezfClientByMemberNumber);
-    success = Particle.function("ClientByClientID", ezfClientByClientIDCloud);
-
-    success = Particle.function("InitLCD", cloudInitLCD);
- 
-    // Used by all device types
-    success = Particle.function("SetDeviceType", cloudSetDeviceType);
-    // xxx limit of 4 handlers??? Particle.subscribe(System.deviceID() + "RFIDLoggingReturn", RFIDLoggingReturn, MY_DEVICES);
-
-    // Used to test CheckIn
-    success = Particle.function("RFIDCardRead", cloudRFIDCardRead);
-
-    // Needed for all devices
-    Particle.subscribe(System.deviceID() + "ezf",particleCallbackEZF, MY_DEVICES);
-    Particle.subscribe(System.deviceID() + "mnlogdb",particleCallbackMNLOGDB, MY_DEVICES); // older
-    Particle.subscribe(System.deviceID() + "fdb",particleCallbackMNLOGDB, MY_DEVICES); // newer
-
-
-    // Used by device types for machine usage permission validation
-    //success = Particle.function("PackagesByClientID",ezfGetPackagesByClientID);
-    //Particle.subscribe(System.deviceID() + "ezfGetPackagesByClientID",ezfReceivePackagesByClientID, MY_DEVICES);
-
-    // Used by Admin Device
-    Particle.function("queryMember",cloudQueryMember);
-    Particle.variable("queryMemberResult",g_queryMemberResult);
-    Particle.function("burnCard",cloudBurnCard);
-    Particle.function("resetCard",cloudResetCardToFresh);
-    Particle.function("identifyCard",cloudIdentifyCard);
-    Particle.variable("identifyCardResult",g_identifyCardResult); // xxx should be queryCardInfoResult
-
-    logToDB("restart","",0,"","");
+   
+    logToDB("restart",String(MN_FIRMWARE_VERSION),0,"","" );
 
     //Show all lights
     writeToLCD("Init all LEDs","should blink");
