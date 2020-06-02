@@ -62,14 +62,14 @@ file.
     "rejectUnauthorized": true,
     "responseTemplate": "",
     "headers": {
-        "Authorization": "Basic NGRkNzk5NjA6NTU3YmFjMGRlZjRlMzE2OTFhMzhjM2U5MjdlNDA5YWQ=",
-        "Content-type": "application/x-www-form-urlencoded",
-        "Accept": "application/json"
+        "Authorization": "Basic NGRk...",
+        "Accept": "application/json",
+        "Content-type": "application/x-www-form-urlencoded"
     },
     "form": {
+        "password": "...",
+        "username":  "...",
         "grant_type": "password",
-        "username": "makernexusdev",
-        "password": "makernexusdev1",
         "scope": "realm:tms"
     }
 }
