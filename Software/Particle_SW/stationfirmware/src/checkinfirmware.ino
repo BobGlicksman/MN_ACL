@@ -127,8 +127,9 @@
  *  1.5  reads station config from Facility Database. Does not yet use the info.
  *  1.6  added last name to fdb logging
  *  1.61 removed enum for dev type, instead relying on fdb for configuration info
+ *  1.7  published a checkin event on successful checkin. useful for lockbox
 ************************************************************************/
-#define MN_FIRMWARE_VERSION 1.61
+#define MN_FIRMWARE_VERSION 1.7
 
 #include "rfidkeys.h"
 
@@ -1617,7 +1618,11 @@ void loopEquipStation() {
             wsloopState = wslWAITFORCARD;
 
         } else {
-           
+
+            //publish the checkin for other devices that may be listening for it
+            String msg = "{\"deviceType\":" + String(EEPROMdata.deviceType) + "}";   // XXX should use arduinoJSON here
+            Particle.publish("checkin",msg,PRIVATE);
+
             writeToLCD(g_stationConfig.LCDName + " allowed", "Be Safe");
             digitalWrite(ADMIT_LED,HIGH);
             buzzerGoodBeepTwice();
