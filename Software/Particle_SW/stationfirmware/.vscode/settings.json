@@ -6,8 +6,8 @@
         "*.ino": "cpp",
         "random": "cpp"
     },
-    "particle.firmwareVersion": "1.2.1",
+    "particle.firmwareVersion": "1.5.2",
     "particle.targetPlatform": "argon",
     "workbench.colorTheme": "Monokai",
-    "particle.targetDevice": "mn_jimdev"
+    "particle.targetDevice": "mn_devCamel"
 }
