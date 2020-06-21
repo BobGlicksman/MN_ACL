@@ -3,17 +3,17 @@
 
 <head>
   <meta charset="utf-8">
-  <title>Summary Reports of Member Checkins</title>
+  <title>Member Checkins Detail</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   <link href="style.css" rel="stylesheet">
 </head>
 
 <body>
-	<h1>Unique member checkins per month</h1>
+	<h1>List of Member Checkins</h1>
 	<table class="rawlogtable">
-	<<TABLEHEADER_MembersPerMonth>>
-	<<TABLEROWS_MembersPerMonth>>
+	<<TABLEHEADER_MemberCheckIns>>
+	<<TABLEROWS_MemberCheckIns>>
 	</table>
 </body>
 
