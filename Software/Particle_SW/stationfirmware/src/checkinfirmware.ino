@@ -130,8 +130,9 @@
  *  1.7  published a checkin event on successful checkin. useful for lockbox
  *  1.71 includes check of RFID revocation on equipment station checkin 
  *  1.72 blinks admit led when RFID card is successfully read 
+ *  1.73 new build with PRODUCTION switch in mnutils.h
 ************************************************************************/
-#define MN_FIRMWARE_VERSION 1.72
+#define MN_FIRMWARE_VERSION 1.73
 
 // Our UTILITIES
 #include "mnutils.h"
