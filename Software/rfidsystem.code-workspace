@@ -17,6 +17,14 @@
 		}
 	],
 	"settings": {
-		"cortex-debug.openocdPath": "${command:particle.getDebuggerOpenocdPath}"
+		"cortex-debug.openocdPath": "${command:particle.getDebuggerOpenocdPath}",
+		"files.associations": {
+			"array": "cpp",
+			"deque": "cpp",
+			"string": "cpp",
+			"unordered_map": "cpp",
+			"vector": "cpp",
+			"initializer_list": "cpp"
+		}
 	}
 }

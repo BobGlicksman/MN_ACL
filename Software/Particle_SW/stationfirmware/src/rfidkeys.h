@@ -11,5 +11,6 @@
 
 #include "application.h"
 extern String RFIDKeysJSON;
+extern int checkinEventSecret;
 
 #endif

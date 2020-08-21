@@ -6,6 +6,10 @@
 
 #include "application.h"
 
+// when defined, we are compiling for production, else development
+// used in rfidkeys.cpp
+//#define MN_PRODUCTION_COMPILE 
+
 //#define TEST     // uncomment for debugging mode
 #define RFID_READER_PRESENT  // uncomment when an RFID reader is connected
 #define LCD_PRESENT  // uncomment when an LCD display is connected
