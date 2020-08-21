@@ -128,13 +128,16 @@
  *  1.6  added last name to fdb logging
  *  1.61 removed enum for dev type, instead relying on fdb for configuration info
  *  1.7  published a checkin event on successful checkin. useful for lockbox
+ *  1.71 includes check of RFID revocation on equipment station checkin 
+ *  1.72 blinks admit led when RFID card is successfully read 
+ *  1.73 new build with PRODUCTION switch in mnutils.h
 ************************************************************************/
-#define MN_FIRMWARE_VERSION 1.7
-
-#include "rfidkeys.h"
+#define MN_FIRMWARE_VERSION 1.73
 
 // Our UTILITIES
 #include "mnutils.h"
+
+#include "rfidkeys.h"
 
 // Our rfid card UTILITIES
 #include "mnrfidutils.h"
@@ -1479,6 +1482,9 @@ void loopEquipStation() {
             // move to the next step
             wsloopState = wslREQUESTTOKEN;
             digitalWrite(READY_LED,LOW);
+            digitalWrite(ADMIT_LED,HIGH);
+            delay(200);
+            digitalWrite(ADMIT_LED,LOW);
             }
         break;
     }
@@ -1521,13 +1527,54 @@ void loopEquipStation() {
         
     }
     case wslWAITFORCLIENTINFO: {
-  
+
+        // got client data, 
+        String msg1, msg2, logmsg;
+        msg1="";
+        msg2="";
+        logmsg="";
+
         if ( g_clientInfo.isValid ) {
-            // got client data, let's move on
-            processStartMilliseconds = millis();
-            ezfGetPackagesByClientID(g_cardData.clientID);
-            wsloopState = wslWAITFORCLIENTPACKAGES;
+
+            if (g_clientInfo.contractStatus.indexOf("Active") == -1) {
+
+                // membership not active, deny checkin
+                msg1 = "Membership";
+                msg2 = "not Active";
+                logmsg = "Membership not active";
+
+            }
+
+            logmsg = isCardUIDValid();
+            if (logmsg.length() > 0) {
+
+                //card revoked, deny checkin
+                msg1 = "RFID Card";
+                msg2 = "validation fail";
+                logmsg = isCardUIDValid();
+
+            } 
+         
+            if (msg1.length() > 0) {
+
+                //deny checkin
+                writeToLCD(msg1, msg2);
+                buzzerBadBeep();
+                delay(2000);
+
+                //log this to DB
+                logToDB(logmsg,"",g_clientInfo.clientID,"","");
+                wsloopState = wslWAITFORCARD; 
+
+            } else {
+                    //membership is ok, let's move on
+                    processStartMilliseconds = millis();
+                    ezfGetPackagesByClientID(g_cardData.clientID);
+                    wsloopState = wslWAITFORCLIENTPACKAGES;
+                }
+
         } else {
+            // client info is not valid yet
             // timer to limit this state
             if (millis() - processStartMilliseconds > 15000) {
                 debugEvent("15 second timer exeeded, clientinfo woodshop aborts");
@@ -1620,7 +1667,8 @@ void loopEquipStation() {
         } else {
 
             //publish the checkin for other devices that may be listening for it
-            String msg = "{\"deviceType\":" + String(EEPROMdata.deviceType) + "}";   // XXX should use arduinoJSON here
+            String msg = "{\"deviceType\":" + String(EEPROMdata.deviceType) + 
+                ",\"secret\":" + String(checkinEventSecret) + "}";   // XXX should use arduinoJSON here
             Particle.publish("checkin",msg,PRIVATE);
 
             writeToLCD(g_stationConfig.LCDName + " allowed", "Be Safe");
