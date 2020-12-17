@@ -1,0 +1,5 @@
+{
+    "particle.targetDevice": "mn_devCamel",
+    "particle.firmwareVersion": "2.0.0-rc.1",
+    "particle.targetPlatform": "argon"
+}
