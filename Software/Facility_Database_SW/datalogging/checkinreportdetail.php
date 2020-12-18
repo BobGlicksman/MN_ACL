@@ -11,8 +11,8 @@
 include 'commonfunctions.php';
 
 // get the HTML skeleton
-$myfile = fopen("checkinreport.txt", "r") or die("Unable to open file!");
-$html = fread($myfile,filesize("checkinreport.txt"));
+$myfile = fopen("checkinreportdetail.txt", "r") or die("Unable to open file!");
+$html = fread($myfile,filesize("checkinreportdetail.txt"));
 fclose($myfile);
 
 // Get the data
@@ -70,7 +70,7 @@ if (mysqli_num_rows($result) > 0) {
 
   }
     
-  $html = str_replace("<<TABLEHEADER_MembersPerMonth>>",
+  $html = str_replace("<<TABLEHEADER_MemberCheckIns>>",
     makeTR(
       array( 
         "Year",
@@ -80,7 +80,7 @@ if (mysqli_num_rows($result) > 0) {
         )
       ),
     $html);
-    $html = str_replace("<<TABLEROWS_MembersPerMonth>>", $tableRows,$html);
+    $html = str_replace("<<TABLEROWS_MemberCheckIns>>", $tableRows,$html);
 
 } else {
     echo "0 results";

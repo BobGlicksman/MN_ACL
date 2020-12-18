@@ -136,6 +136,7 @@ if (mysqli_num_rows($result2) > 0) {
     $thisDOY = intval($row["DOY"]);
     
     $thisTableRow = makeTR( array (
+                $row["DOY"],
                 $row["yr"], 
                 $row["mnth"],
                 $row["dy"],
@@ -144,18 +145,18 @@ if (mysqli_num_rows($result2) > 0) {
         );
     if ($dataX == "") {
       // first row
-      $previousDOY = $thisDOY;
-      $dataX =  $row["yr"] . "/" . $row["mnth"] . "/" . $row["dy"];
+      $previousDOY = $row["yr"] . "/" . $thisDOY;
+      $dataX = $thisDOY;
       $dataY =  $row["cnt"];
     } else {
       while ($thisDOY > ($previousDOY + 1)) {
         // if we have a gap in day of year, add 0 data values
         $previousDOY = $previousDOY + 1;
-        $dataX = $dataX . " " . $previousDOY;
+        $dataX = $dataX . " " . $row["yr"] . "/" . $previousDOY;
         $dataY = $dataY . " 0";
       }
       $previousDOY = $thisDOY;
-      $dataX = $dataX . " " . $row["yr"] . "/" . $row["mnth"] . "/" . $row["dy"];
+      $dataX = $dataX . " " . $row["yr"] . "/" . $thisDOY;
       $dataY = $dataY . " " . $row["cnt"];
     }
     $tableRows = $tableRows . $thisTableRow;
@@ -167,9 +168,10 @@ if (mysqli_num_rows($result2) > 0) {
     $html = str_replace("<<TABLEHEADER_MembersPerDay>>",
     	makeTR(
     		array( 
+          "DOY",
     			"Year",
-                "Month",
-                "Day",
+          "Month",
+          "Day",
     			"Unique Members"
     			)
     		),

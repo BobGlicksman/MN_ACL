@@ -130,13 +130,14 @@
  *  1.7  published a checkin event on successful checkin. useful for lockbox
  *  1.71 includes check of RFID revocation on equipment station checkin 
  *  1.72 blinks admit led when RFID card is successfully read 
+ *  1.73 new build with PRODUCTION switch in mnutils.h
 ************************************************************************/
-#define MN_FIRMWARE_VERSION 1.72
-
-#include "rfidkeys.h"
+#define MN_FIRMWARE_VERSION 1.73
 
 // Our UTILITIES
 #include "mnutils.h"
+
+#include "rfidkeys.h"
 
 // Our rfid card UTILITIES
 #include "mnrfidutils.h"
@@ -1666,7 +1667,8 @@ void loopEquipStation() {
         } else {
 
             //publish the checkin for other devices that may be listening for it
-            String msg = "{\"deviceType\":" + String(EEPROMdata.deviceType) + "}";   // XXX should use arduinoJSON here
+            String msg = "{\"deviceType\":" + String(EEPROMdata.deviceType) + 
+                ",\"secret\":" + String(checkinEventSecret) + "}";   // XXX should use arduinoJSON here
             Particle.publish("checkin",msg,PRIVATE);
 
             writeToLCD(g_stationConfig.LCDName + " allowed", "Be Safe");
