@@ -115,6 +115,8 @@
  *      LCD shows checked in or out based on our database
  *      second callback routine for mnlogdb... webhooks
  * 
+
+ * 
  *  1.20 supports device type 4 woodshop door 
  *       device type -1 will buzz once. use this to know you're talking to the right box
  *       Fixed issue #15 where bad cards got denied and ok messages
@@ -131,8 +133,10 @@
  *  1.71 includes check of RFID revocation on equipment station checkin 
  *  1.72 blinks admit led when RFID card is successfully read 
  *  1.73 new build with PRODUCTION switch in mnutils.h
+ *  1.8  ezfReceiveClientByClientID has been reworked to handle the case where the response is more than one 
+ *       part from Particle Cloud and the parts come out of order.
 ************************************************************************/
-#define MN_FIRMWARE_VERSION 1.73
+#define MN_FIRMWARE_VERSION 1.8
 
 // Our UTILITIES
 #include "mnutils.h"
@@ -881,9 +885,51 @@ int ezfClientByClientID (int clientID) {
  * Called by particleCallbackEZF()
  */
 void ezfReceiveClientByClientID (const char *event, const char *data)  {
-    
-    g_cibcidResponseBuffer = g_cibcidResponseBuffer + String(data);
+
+    // Note: the full response might be in several parts and they may not come in 
+    // order. 
+
     debugEvent ("clientInfoPart " + String(data));
+
+    // Temp workaround
+    const int MAX_CLIENT_INFO_PIECES = 4;
+    static String pieces[MAX_CLIENT_INFO_PIECES] = {"","","",""};
+    static unsigned long receiveFirstMS = 0;    // ms when the first package comes in 
+    const unsigned long MAX_MSG_WAIT_MS = 14000; // we must get all parts within 14 seconds
+
+    if (millis() - receiveFirstMS > MAX_MSG_WAIT_MS) {
+        // we have gone too long, so this must be a new set of parts
+        // reset all our local state
+        debugEvent("clearing client info receive");
+        receiveFirstMS = millis();
+        for (int i=0; i < MAX_CLIENT_INFO_PIECES; i++){
+            pieces[i] = "";
+        }
+    } 
+
+    String eventName = String(event);
+
+    // what part number do we have?
+    String partNumberString = eventName.substring(eventName.lastIndexOf("/")+1,eventName.length());
+    int partNumberInt = partNumberString.toInt(); // if this fails, the value is 0 - grrr
+
+    // store the part in our static variables
+    if (partNumberInt < MAX_CLIENT_INFO_PIECES) {
+        pieces[partNumberInt] = String(data);
+    } else {
+        // we must have gotten more than MAX_CLIENT_INFO_PIECES pieces and we don't handle that
+        // so set the timer so that when a new part comes in we'll clear all this out
+        receiveFirstMS = 0;
+    }
+
+    // if we have a piece 0, then concatenate and pass off to see if we have a full JSON
+    if (pieces[0].length() > 10) {
+        // all responses are at least 10 characters long
+        g_cibcidResponseBuffer = ""; // if some parts are not here, the parse test will fail
+        for (int i=0; i < MAX_CLIENT_INFO_PIECES; i++) {
+            g_cibcidResponseBuffer = g_cibcidResponseBuffer + pieces[i];
+        }
+    }
     
     clientInfoFromJSON(g_cibcidResponseBuffer);
 }
@@ -1577,7 +1623,7 @@ void loopEquipStation() {
             // client info is not valid yet
             // timer to limit this state
             if (millis() - processStartMilliseconds > 15000) {
-                debugEvent("15 second timer exeeded, clientinfo woodshop aborts");
+                debugEvent("15 second timer exeeded, clientinfo aborts");
                 processStartMilliseconds = 0;
                 writeToLCD("Timeout clientInfo", "Try Again");
                 buzzerBadBeep();
@@ -1602,7 +1648,7 @@ void loopEquipStation() {
         } else {
             // timer to limit this state
             if (millis() - processStartMilliseconds > 30000) {
-                debugEvent("15 second timer exeeded for packages, woodshop aborts");
+                debugEvent("15 second timer exeeded for packages, aborts");
                 processStartMilliseconds = 0;
                 writeToLCD("Timeout packages", "Try Again");
                 buzzerBadBeep();
