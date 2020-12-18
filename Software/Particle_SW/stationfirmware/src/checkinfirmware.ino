@@ -901,7 +901,7 @@ void ezfReceiveClientByClientID (const char *event, const char *data)  {
         // we have gone too long, so this must be a new set of parts
         // reset all our local state
         debugEvent("clearing client info receive");
-        receiveFirstMS = millis();
+        receiveFirstMS = millis(); 
         for (int i=0; i < MAX_CLIENT_INFO_PIECES; i++){
             pieces[i] = "";
         }
@@ -1648,7 +1648,7 @@ void loopEquipStation() {
         } else {
             // timer to limit this state
             if (millis() - processStartMilliseconds > 30000) {
-                debugEvent("15 second timer exeeded for packages, aborts");
+                debugEvent("30 second timer exeeded for packages, aborts");
                 processStartMilliseconds = 0;
                 writeToLCD("Timeout packages", "Try Again");
                 buzzerBadBeep();
