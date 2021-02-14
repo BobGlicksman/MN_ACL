@@ -8,7 +8,6 @@ BEGIN $$
 
 DROP PROCEDURE IF EXISTS sp_checkedInDisplay $$
 
-DELIMITER $$
 CREATE DEFINER=`makernexuswiki`@`localhost` PROCEDURE `sp_checkedInDisplay`(IN `dateToQuery` VARCHAR(8))
 BEGIN 
 
@@ -67,3 +66,4 @@ ORDER BY firstName, photoDisplay
 ;
 
 END$$
+
