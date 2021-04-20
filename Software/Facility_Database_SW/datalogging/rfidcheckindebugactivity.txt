@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <title>Summary Reports of log records for debug</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <link href="style.css" rel="stylesheet">
+
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+</head>
+
+<body>
+	<H2>Summary of log records</H2>
+	
+	<div style="float:left;">
+		<div id='graph1'></div>
+	</div>
+
+	<div style="float:left;">
+		<div id='graph2'></div>
+	</div>
+
+	<div style="float:left;">
+		<H2>Place Holder for future report</H2>
+	</div>
+
+	<div style="float:left; clear:both">
+		<h1>Log records Event: RFIDLogCheckInOut</h1>
+		<table class="rawlogtable">
+		<<TABLEHEADER_RecordsPerMonth>>
+		<<TABLEROWS_RecordsPerMonth>>
+		</table>
+	</div>
+	
+	<div style="float:left; clear:both;">
+		<h1>Total DB Records Added</h1>
+		<table class="rawlogtable">
+		<<TABLEHEADER_LogRecordsPerDay>>
+		<<TABLEROWS_LogRecordsPerDay>>
+		</table>
+	</div>
+
+
+
+	<!-- hidden div for passing data from PHP to the JS graphing functions -->
+	<div id="graph1data" style="display:none">
+		<div id="graph1dataX"><<GRAPH1DATAX>></div><div id="graph1dataY"><<GRAPH1DATAY>></div>
+	</div>
+	<div id="graph2data" style="display:none">
+		<div id="graph2dataX"><<GRAPH2DATAX>></div><div id="graph2dataY"><<GRAPH2DATAY>></div>
+	</div>
+
+	<script>
+		dataX = document.getElementById('graph1dataX').textContent;
+		dataY = document.getElementById('graph1dataY').textContent;
+		var x = dataX.split(" ");
+		var y = dataY.split(" ").map(Number);
+		var graphdata1 = [
+			{
+				x:x, 
+				y:y, 
+				type:"bar"
+			}
+		];
+		var graphlayout1 = {
+			autosize: false,
+			width: 400,
+			height: 350,
+			title: {
+				text:'RFIDLogCheckInOut counts',
+				font: {
+				family: 'Courier New, monospace',
+				size: 16
+				},
+				xref: 'paper',
+				x: 0.05,
+			}
+		};
+
+		gdiv1 = document.getElementById('graph1');
+		Plotly.newPlot(gdiv1,graphdata1,graphlayout1,{responsive: true});
+
+
+		dataX = document.getElementById('graph2dataX').textContent;
+		dataY = document.getElementById('graph2dataY').textContent;
+		var x = dataX.split(" ");
+		var y = dataY.split(" ").map(Number);
+		var graphdata2 = [
+			{
+				x:x, 
+				y:y, 
+				type:"bar"
+			}
+		];
+		var graphlayout2 = {
+			autosize: false,
+			width: 600,
+			height: 350,
+			title: {
+				text:'Total DB Records Added',
+				font: {
+				family: 'Courier New, monospace',
+				size: 16
+				},
+				xref: 'paper',
+				x: 0.05,
+			}
+		};
+
+		gdiv2 = document.getElementById('graph2');
+		Plotly.newPlot(gdiv2,graphdata2,graphlayout2,{responsive: true});
+	</script>
+</body>
+
+</html>
