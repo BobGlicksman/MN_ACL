@@ -8,7 +8,8 @@ BEGIN $$
 
 DROP PROCEDURE IF EXISTS sp_checkedInDisplay $$
 
-CREATE DEFINER=`makernexuswiki`@`localhost` PROCEDURE `sp_checkedInDisplay` (IN `dateToQuery` VARCHAR(8))  BEGIN 
+CREATE DEFINER=`makernexuswiki`@`localhost` PROCEDURE `sp_checkedInDisplay`(IN `dateToQuery` VARCHAR(8))
+BEGIN 
 
 -- get list of members checked in
 DROP TEMPORARY TABLE IF EXISTS tmp_checkedin_clients;
@@ -45,7 +46,11 @@ LEFT JOIN
      	SELECT * 
         FROM rawdata 
         WHERE CONVERT( dateEventLocal, DATE) = CONVERT(dateToQuery, DATE) 
-       	  AND  logEvent in (select logEvent from stationConfig where active = 1)
+       	  AND  logEvent in 
+             (select logEvent from stationConfig 
+               where active = 1
+                 and length(logEvent) > 0
+             )
  	) AS  p 
 ON a.clientID = p.clientID
 ;
