@@ -135,8 +135,10 @@
  *  1.73 new build with PRODUCTION switch in mnutils.h
  *  1.8  ezfReceiveClientByClientID has been reworked to handle the case where the response is more than one 
  *       part from Particle Cloud and the parts come out of order.
+ *  1.9  added DEBUGX_EVENTS_ALLOWED define in mnutils.h to disable publishing debugX events in production
+ *       the checked in code should have this define commented out. Also, runs on Particle 3.0
 ************************************************************************/
-#define MN_FIRMWARE_VERSION 1.8
+#define MN_FIRMWARE_VERSION 1.9
 
 // Our UTILITIES
 #include "mnutils.h"
