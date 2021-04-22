@@ -10,6 +10,9 @@
 // used in rfidkeys.cpp
 //#define MN_PRODUCTION_COMPILE 
 
+//#define DEBUGX_EVENTS_ALLOWED  //These events consume Particle cloud Data Operations and should not be enabled for
+                               //every production device for weeks at a time. 
+
 //#define TEST     // uncomment for debugging mode
 #define RFID_READER_PRESENT  // uncomment when an RFID reader is connected
 #define LCD_PRESENT  // uncomment when an LCD display is connected
