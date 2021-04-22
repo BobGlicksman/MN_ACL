@@ -135,8 +135,10 @@
  *  1.73 new build with PRODUCTION switch in mnutils.h
  *  1.8  ezfReceiveClientByClientID has been reworked to handle the case where the response is more than one 
  *       part from Particle Cloud and the parts come out of order.
+ *  1.9  added DEBUGX_EVENTS_ALLOWED define in mnutils.h to disable publishing debugX events in production
+ *       the checked in code should have this define commented out. Also, runs on Particle 3.0
 ************************************************************************/
-#define MN_FIRMWARE_VERSION 1.8
+#define MN_FIRMWARE_VERSION 1.9
 
 // Our UTILITIES
 #include "mnutils.h"
@@ -901,7 +903,7 @@ void ezfReceiveClientByClientID (const char *event, const char *data)  {
         // we have gone too long, so this must be a new set of parts
         // reset all our local state
         debugEvent("clearing client info receive");
-        receiveFirstMS = millis();
+        receiveFirstMS = millis(); 
         for (int i=0; i < MAX_CLIENT_INFO_PIECES; i++){
             pieces[i] = "";
         }
@@ -1648,7 +1650,7 @@ void loopEquipStation() {
         } else {
             // timer to limit this state
             if (millis() - processStartMilliseconds > 30000) {
-                debugEvent("15 second timer exeeded for packages, aborts");
+                debugEvent("30 second timer exeeded for packages, aborts");
                 processStartMilliseconds = 0;
                 writeToLCD("Timeout packages", "Try Again");
                 buzzerBadBeep();

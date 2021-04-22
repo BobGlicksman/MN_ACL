@@ -120,7 +120,8 @@ int particlePublish (String eventName, String data) {
 String messageBuffer = "";
 // Call this from the main look with a null message
 void debugEvent (String message) {
-    
+
+#ifdef DEBUGX_EVENTS_ALLOWED    
     if (message.length() > 0 ){
         // a message was passed in
         
@@ -150,6 +151,8 @@ void debugEvent (String message) {
             }
         }
     }
+#endif
+
 }
 
 
