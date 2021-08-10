@@ -1,0 +1,6 @@
+{
+    "particle.targetDevice": "mn_devCamel",
+    "particle.firmwareVersion": "2.0.0",
+    "particle.targetPlatform": "argon",
+    "C_Cpp.default.configurationProvider": "particle.particle-vscode-core"
+}
