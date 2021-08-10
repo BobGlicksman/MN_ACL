@@ -137,8 +137,10 @@
  *       part from Particle Cloud and the parts come out of order.
  *  1.9  added DEBUGX_EVENTS_ALLOWED define in mnutils.h to disable publishing debugX events in production
  *       the checked in code should have this define commented out. Also, runs on Particle 3.0
+ *  2.0  Looking into github bug #79. added a few comments and removed call to ezfcheckin in the
+ *       loopCheckin function state machine. We don't know if this will fix the bug.
 ************************************************************************/
-#define MN_FIRMWARE_VERSION 1.9
+#define MN_FIRMWARE_VERSION 2.0
 
 // Our UTILITIES
 #include "mnutils.h"
@@ -639,8 +641,9 @@ String clientInfoToJSON(int errCode, String errMsg, bool includeCardData){
 int clientInfoFromJSON(String data){
 
 const size_t capacity = 3*JSON_ARRAY_SIZE(2) + 2*JSON_ARRAY_SIZE(3) + 10*JSON_OBJECT_SIZE(2) + JSON_OBJECT_SIZE(20) + 1050;
-    DynamicJsonDocument docJSON(capacity);
-   
+    DynamicJsonDocument docJSON(capacity); // XXX DOES THIS ACTUALLY CLEAR THE JSON OBJECT?
+    // XXX docJSON.clear();   // json library says this is unncessary, but see GitHub bug: ???
+
     char temp[3000]; //This has to be long enough for an entire JSON response
     strcpy_safe(temp, g_cibcidResponseBuffer.c_str());
     
@@ -932,7 +935,7 @@ void ezfReceiveClientByClientID (const char *event, const char *data)  {
             g_cibcidResponseBuffer = g_cibcidResponseBuffer + pieces[i];
         }
     }
-    
+    // XXX WHY CALL THIS IF WE DON'T HAVE PART 0 YET?
     clientInfoFromJSON(g_cibcidResponseBuffer);
 }
 
@@ -1910,7 +1913,12 @@ void loopCheckIn() {
                 debugEvent ("SM: now checkin client");
                 // tell EZF to check someone in 
                 // xxx should we only do this on a checkin, not a checkout?
-                ezfCheckInClient(String(g_clientInfo.clientID));
+
+                // GitHub bug #79: tried commenting out this call to ezf
+                // since we don't use that state in EZF for anything
+                // and we don't wait for the webhook to respond; could that be
+                // causing the bug???
+                // ezfCheckInClient(String(g_clientInfo.clientID));
                 
                 // log this to our DB 
                 processStartMilliseconds = millis();
