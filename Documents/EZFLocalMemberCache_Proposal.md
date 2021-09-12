@@ -221,4 +221,15 @@ The fields which will require custom attention from the parser are:
 
 	All other fields should be a direct pass through.
 
+## Questions or comments to be investigated and resolved
+JBS: I think there is a lot of sensitive personal information returned. If we store it then we have a responsibility to protect it while at-rest. I'd prefer to only store the fields we will need, or think we might need. No need for phone number, email, pronoun, address, etc. 
 
+JBS: The cache is updated periodically. If the data changes between updates it will be old. I'm not too concerned about granting access to someone who does not qualify, but I would hate to deny a valid, current member. The vast majority of client info transactions will result in a correct, positive access to the resource. One strategy is to go back to the CRM for current information if the result is to deny access. Of course the cache does not know what the end device is evaluating so it does not know if the result was to deny. I suggest adding an API to the cache that can be called from an end device to say "I just denied access based on client info". The cache would then go back to the CRM system to get current data on that clientID. The next time the cache is queried it will return the latest information; this would happen in less than a second. The user experience would be "I just got my membership today but check-in has denied me! Oh, I just tried again and it worked!" After that it will always work. 
+
+JBS: We do get charged by EZF for each API call to the CRM. If the call to get recent changes requires 10 "get next page" API calls, that might count as 10 API events. Not sure this is a problem, we just need to make sure.
+
+JBS: We'll need to address how this system is backed up - if at all. Maybe no need for that.
+	
+JBS: Is there some security on the cache system? Maybe have the front end locked to the public IP of MN?
+
+JBS: I wonder if we should discuss coding styles? What is the anticipated language of implementation? We use .PHP for a lot today, will that work? Is there an admin interface to this? If so, a separation of style, layout, and code into different files? Do we put business logic into stored procedures when possible? Maybe a lot of other questions I haven't thought of.
