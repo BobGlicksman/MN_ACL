@@ -11,9 +11,10 @@ This cache should provide several advantages:
 ### Implementation stages and dependencies
 The implementation will be in stages and should be relatively straight forward...
 
-####Stage 1 -- PoC for building and refreshing the cache
+#### Stage 1 -- PoC for building and refreshing the cache
 The cache will be an SQL database with a schema built from the schema for a client record in the EZF API.
 Currently a member record consists of:
+```
 Array [
 	Struct {
 		ClientID			integer
@@ -61,7 +62,7 @@ Array [
 		MemberPhotoURL			string
 	}
 ]
-
+```
 
 The following API calls will be used in the PoC:
 
@@ -141,6 +142,7 @@ the current database regradless of schema changes implemented by EZFacility.
 
 The initial SQL schema will be as follows:
 
+```
 TABLE: Members
 JSON Field Name				SQL Field Name				SQL Data Type(length)
 ClientID				ClientID				BIGINT(12)
@@ -180,6 +182,7 @@ MemberPhotoUrl				MemberPhotoUrl				VARCHAR(255)
 TABLE: MemberEmail
 ClientID				BIGINT(12) non-unique Primary Key -- Tied to Members:ClientID (each Client ID may have more than one record)
 Email:					VARCHAR(64)
+```
 
 Table "MemberEmail" exists strictly because EZF returns emails as an array indicating a member might be able to have more than one email stored in their database. If we could depend on a single email (or not care about anything but the first email), this table could be obviated in favor of a single field in table "Members".
 
