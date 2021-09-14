@@ -139,8 +139,10 @@
  *       the checked in code should have this define commented out. Also, runs on Particle 3.0
  *  2.0  Looking into github bug #79. added a few comments and removed call to ezfcheckin in the
  *       loopCheckin function state machine. We don't know if this will fix the bug.
+ *  2.1  updated to new ArduinoJSON library version 6.18.4
+ *       replaced .as<char*>() with .as<const char*>()
 ************************************************************************/
-#define MN_FIRMWARE_VERSION 2.0
+#define MN_FIRMWARE_VERSION 2.1
 
 // Our UTILITIES
 #include "mnutils.h"
@@ -572,7 +574,7 @@ void ezfReceiveCheckInToken (const char *event, const char *data)  {
     JSONParseError =  err.c_str();
     if (!err) {
         //We have valid full JSON response (all parts), get the token
-        g_authTokenCheckIn.token = String(docJSON["access_token"].as<char*>());
+        g_authTokenCheckIn.token = String(docJSON["access_token"].as<const char*>());
         g_authTokenCheckIn.goodUntil = millis() + docJSON["expires_in"].as<int>()*1000 - 5000;   // set expiry five seconds early
         
         debugEvent ("have token now " + String(millis()) + "  Good Until  " + String(g_authTokenCheckIn.goodUntil) );
@@ -657,18 +659,18 @@ const size_t capacity = 3*JSON_ARRAY_SIZE(2) + 2*JSON_ARRAY_SIZE(3) + 10*JSON_OB
 
         g_clientInfo.clientID = docJSON["ClientID"].as<int>();
             
-        g_clientInfo.contractStatus = docJSON["MembershipContractStatus"].as<char*>();
+        g_clientInfo.contractStatus = docJSON["MembershipContractStatus"].as<const char*>();
             
-        String fieldName = docJSON["CustomFields"][0]["Name"].as<char*>();
+        String fieldName = docJSON["CustomFields"][0]["Name"].as<const char*>();
             
         if (fieldName.indexOf("RFID Card UID") >= 0) {
-            g_clientInfo.RFIDCardKey = docJSON["CustomFields"][0]["Value"].as<char*>(); 
+            g_clientInfo.RFIDCardKey = docJSON["CustomFields"][0]["Value"].as<const char*>(); 
         }
         
-        g_clientInfo.lastName = String(docJSON["LastName"].as<char*>());
-        g_clientInfo.firstName = String(docJSON["FirstName"].as<char*>()); 
+        g_clientInfo.lastName = String(docJSON["LastName"].as<const char*>());
+        g_clientInfo.firstName = String(docJSON["FirstName"].as<const char*>()); 
 
-        g_clientInfo.memberNumber = String(docJSON["MembershipNumber"].as<char*>());  
+        g_clientInfo.memberNumber = String(docJSON["MembershipNumber"].as<const char*>());  
 
         g_clientInfo.amountDue  = docJSON["AmountDue"]; 
 
@@ -728,18 +730,18 @@ int clientInfoFromJSONArray (String data) {
 
             } else {
             
-                g_clientInfo.contractStatus = root_0["MembershipContractStatus"].as<char*>();
+                g_clientInfo.contractStatus = root_0["MembershipContractStatus"].as<const char*>();
                 
-                String fieldName = root_0["CustomFields"][0]["Name"].as<char*>();
+                String fieldName = root_0["CustomFields"][0]["Name"].as<const char*>();
                 
                 if (fieldName.indexOf("RFID Card UID") >= 0) {
-                g_clientInfo.RFIDCardKey = root_0["CustomFields"][0]["Value"].as<char*>(); 
+                g_clientInfo.RFIDCardKey = root_0["CustomFields"][0]["Value"].as<const char*>(); 
                 }
 
-                g_clientInfo.lastName = String(root_0["LastName"].as<char*>());
-                g_clientInfo.firstName = String(root_0["FirstName"].as<char*>());
+                g_clientInfo.lastName = String(root_0["LastName"].as<const char*>());
+                g_clientInfo.firstName = String(root_0["FirstName"].as<const char*>());
 
-                g_clientInfo.memberNumber = String(root_0["MembershipNumber"].as<char*>());
+                g_clientInfo.memberNumber = String(root_0["MembershipNumber"].as<const char*>());
 
                 g_clientInfo.amountDue = root_0["AmountDue"]; 
                 
@@ -1107,11 +1109,11 @@ void fdbReceiveStationConfig(const char *event, const char *data) {
         if (root_0["deviceType"].as<int>() == EEPROMdata.deviceType) {
 
             int devType = root_0["deviceType"].as<int>();
-            String deviceName =  root_0["deviceName"].as<char*>();
-            String LCDName = root_0["LCDName"].as<char*>();
-            String logEvent = root_0["logEvent"].as<char*>();
-            String photoDisplay = root_0["photoDisplay"].as<char*>();
-            String OKKeywords = root_0["OKKeywords"].as<char*>();
+            String deviceName =  root_0["deviceName"].as<const char*>();
+            String LCDName = root_0["LCDName"].as<const char*>();
+            String logEvent = root_0["logEvent"].as<const char*>();
+            String photoDisplay = root_0["photoDisplay"].as<const char*>();
+            String OKKeywords = root_0["OKKeywords"].as<const char*>();
 
             setStationConfig(
                 devType,
