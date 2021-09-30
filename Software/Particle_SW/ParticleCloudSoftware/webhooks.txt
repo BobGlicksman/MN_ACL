@@ -5,6 +5,8 @@ click Custom Template and post one of these packages in the text box.
 Note that private keys, accounts, and passwords have been removed from this
 file.
 
+2021 09 30   Updated ezfClientByClientID to use Mustache code to reduce the amount of data returned.
+
 {
     "event": "RFIDLogging",
     "url": "http://rfidsandbox.makernexuswiki.com/rfidcheckin.php",
@@ -45,10 +47,11 @@ file.
     "requestType": "GET",
     "noDefaults": true,
     "rejectUnauthorized": true,
+    "responseTemplate": "{{! Mustache Code for ezfClientByClientID return values \n\tMake JSON that is just what we need in the client from what\n\tis returned from the EZF CRM system.\n\t}}\n\t{\n\t\"AmountDue\":{{AmountDue}},\n\t\"ClientID\":{{ClientID}},\n\n\t\"CustomFields\": [\n\n\t\t{{#CustomFields}} \n\t\t\t{\"Name\":\"{{Name}}\", \"Value\":\"{{Value}}\" },\n \t\t{{/CustomFields}} \n \t\t\n \t\t{\"Name\":\"Junk\",\"Value\":\"JunkValue\"}\n\t],\n\t   \n\t\"FirstName\":\"{{FirstName}}\",\n\t\"LastName\":\"{{LastName}}\",\n\t\"MembershipContractStatus\":\"{{MembershipContractStatus}}\",\n\t\"MembershipNumber\":\"{{MembershipNumber}}\"\n\t}",
     "headers": {
-        "Authorization": "Bearer {{{access_token}}}",
+        "ez-page-number": "1",
         "Accept": "application/json",
-        "ez-page-number": "1"
+        "Authorization": "Bearer {{{access_token}}}"
     }
 }
 
