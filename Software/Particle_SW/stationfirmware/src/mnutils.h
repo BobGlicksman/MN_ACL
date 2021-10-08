@@ -8,7 +8,7 @@
 
 // when defined, we are compiling for production, else development
 // used in rfidkeys.cpp
-#define MN_PRODUCTION_COMPILE 
+//#define MN_PRODUCTION_COMPILE 
 
 //#define DEBUGX_EVENTS_ALLOWED  //These events consume Particle cloud Data Operations and should not be enabled for
                                //every production device for weeks at a time. 
