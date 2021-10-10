@@ -141,8 +141,11 @@
  *       loopCheckin function state machine. We don't know if this will fix the bug.
  *  2.1  updated to new ArduinoJSON library version 6.18.4
  *       replaced .as<char*>() with .as<const char*>()
+ *  2.2  Waiting on clientByClientID now sets an error if the first deserialize fails. With Mustache 
+ *       code in the Particle Cloud webhook, we should only get one message back, so no need to wait.
+ *       Adds logging of webhook response if deserialize fails.
 ************************************************************************/
-#define MN_FIRMWARE_VERSION 2.1
+#define MN_FIRMWARE_VERSION 2.2
 
 // Our UTILITIES
 #include "mnutils.h"
@@ -524,6 +527,9 @@ int ezfGetCheckInToken () {
 
     } else {
 
+        //XXX Maybe we should have an isError element and wait 15 minutes if we had a getToken error
+        //XXX Also, maybe move lastRequest to be an element of g_authTokenCheckIn ?
+
         // current token has expired, consider getting a new one 
         if (lastRequest + 20000 > millis()) {
 
@@ -575,6 +581,8 @@ void ezfReceiveCheckInToken (const char *event, const char *data)  {
     if (!err) {
         //We have valid full JSON response (all parts), get the token
         g_authTokenCheckIn.token = String(docJSON["access_token"].as<const char*>());
+
+        //XXX 5 seconds seems too close. Maybe 10 minutes?
         g_authTokenCheckIn.goodUntil = millis() + docJSON["expires_in"].as<int>()*1000 - 5000;   // set expiry five seconds early
         
         debugEvent ("have token now " + String(millis()) + "  Good Until  " + String(g_authTokenCheckIn.goodUntil) );
@@ -654,7 +662,8 @@ const size_t capacity = 3*JSON_ARRAY_SIZE(2) + 2*JSON_ARRAY_SIZE(3) + 10*JSON_OB
     JSONParseError =  err.c_str();
     if (!err) {
         
-        // xxx this should really be in a common routine with (search deserialize client)
+        // xxx this whole bit should really be in a common routine with (search deserialize client)
+
         clearClientInfo();
 
         g_clientInfo.clientID = docJSON["ClientID"].as<int>();
@@ -680,6 +689,9 @@ const size_t capacity = 3*JSON_ARRAY_SIZE(2) + 2*JSON_ARRAY_SIZE(3) + 10*JSON_OB
 
     } else {
         debugEvent("JSON parse error " + JSONParseError);
+
+        // Set Error if the JSON does not parse
+        g_clientInfo.isError = true;
         return 1;
     }
 }
@@ -1854,6 +1866,20 @@ void loopCheckIn() {
             // got client data, let's move on
             cilloopState = cilCHECKINGIN;
         } else {
+
+            if ( g_clientInfo.isError ) { 
+                writeToLCD("bad client JSON","Try Again");
+                buzzerBadBeep();
+                digitalWrite(REJECT_LED,HIGH);
+                delay(2000);
+                digitalWrite(REJECT_LED,LOW);
+
+                // log this to DB
+                logToDB("client JSON error", ">" + g_cibcidResponseBuffer + "<",g_clientInfo.clientID,"","" );
+
+                cilloopState = cilWAITFORCARD;
+            }
+
             // timer to limit this state
             if (millis() - processStartMilliseconds > 15000) {
                 debugEvent("15 second timer exeeded, checkin aborts");

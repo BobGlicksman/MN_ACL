@@ -232,6 +232,7 @@ void EEPROMRead() {
 void clearClientInfo() {
     
     g_clientInfo.isValid = false;
+    g_clientInfo.isError = false;
     g_clientInfo.lastName = "";
     g_clientInfo.firstName = "";
     g_clientInfo.clientID = 0;
