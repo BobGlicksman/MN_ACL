@@ -144,8 +144,12 @@
  *  2.2  Waiting on clientByClientID now sets an error if the first deserialize fails. With Mustache 
  *       code in the Particle Cloud webhook, we should only get one message back, so no need to wait.
  *       Adds logging of webhook response if deserialize fails.
+ *  2.3  Now does not keep trying to get token if the previous getToken failed. This keeps us 
+ *       from hammering the CRM system. Requires an update to ezfCheckinToken webhook that
+ *       sets the Error-Response-Topic. After an error will try to get new token only when 
+ *       an RFID card is presented.
 ************************************************************************/
-#define MN_FIRMWARE_VERSION 2.2
+#define MN_FIRMWARE_VERSION 2.3
 
 // Our UTILITIES
 #include "mnutils.h"
@@ -188,6 +192,7 @@ String g_packages = ""; // Not implemented yet xxx
 struct struct_authTokenCheckIn {
    String token = ""; 
    unsigned long goodUntil = 0;   // if millis() returns a value less than this, the token is valid
+   bool waitForCardTapBeforeTrying =  false;  // our last get token failed seriously
 } g_authTokenCheckIn;
 
 struct struct_clientPackages {
@@ -498,7 +503,7 @@ void particleCallbackEZF (const char *event, const char *data) {
 //
 int ezfGetCheckInTokenCloud (String data) {
     
-    ezfGetCheckInToken();
+    ezfGetCheckInToken(true);
     return 0;
     
 }
@@ -511,12 +516,17 @@ int ezfGetCheckInTokenCloud (String data) {
  * If the token has expired (or was never initialized) then this starts 
  * the process by calling the webhook ezfCheckInToken. This will not ask for
  * a token if the previous request for a token was less than 20 seconds ago.
+ * Also, if the getToken resulted in a hook-error in the Particle cloud, then
+ * we will not try again for 15 minutes.
+ * 
+ * If cardIsPresented is true, then we will try to get a token even if we are 
+ * currently waiting for an error timeout to pass. 
  * 
  * Caller should wait until length of g_authTokenCheckIn > 0 after calling this
  * routine.
 */
 
-int ezfGetCheckInToken () {
+int ezfGetCheckInToken (bool cardIsPresented) {
     
     static unsigned long lastRequest = 0;
 
@@ -527,23 +537,25 @@ int ezfGetCheckInToken () {
 
     } else {
 
-        //XXX Maybe we should have an isError element and wait 15 minutes if we had a getToken error
         //XXX Also, maybe move lastRequest to be an element of g_authTokenCheckIn ?
 
-        // current token has expired, consider getting a new one 
-        if (lastRequest + 20000 > millis()) {
-
-            // we asked for a token less than 20 seconds ago
+        // if a human tapped a card, then don't worry about the error hold off 
+        if (g_authTokenCheckIn.waitForCardTapBeforeTrying && !cardIsPresented) {
+            // we had a serious error, have we waited long enough? 
             // do nothing
 
         } else {
 
-            // we haven't asked for a token in a while, so ask for one 
-            g_authTokenCheckIn.token = "";
-            g_tokenResponseBuffer = "";
-            Particle.publish("ezfCheckInToken", "", PRIVATE);
-            lastRequest = millis();
-        
+            // current token has expired, get a new one 
+
+            if (millis() - lastRequest > 20000) {                       
+                // we haven't asked for a token in a while, so ask for one 
+                g_authTokenCheckIn.token = "";
+                g_tokenResponseBuffer = "";
+                Particle.publish("ezfCheckInToken", "", PRIVATE);
+                lastRequest = millis();
+            }
+
         }
 
     }
@@ -562,7 +574,8 @@ int ezfGetCheckInToken () {
 */
 void ezfReceiveCheckInToken (const char *event, const char *data)  {
     
-    // accumulate response data
+    // accumulate response data  
+    // XXX note that this routine assumes multiple messages in the response come in order!
     g_tokenResponseBuffer = g_tokenResponseBuffer + data;
 
     static int partsCnt = 0; //xxx
@@ -581,13 +594,40 @@ void ezfReceiveCheckInToken (const char *event, const char *data)  {
     if (!err) {
         //We have valid full JSON response (all parts), get the token
         g_authTokenCheckIn.token = String(docJSON["access_token"].as<const char*>());
+        g_authTokenCheckIn.waitForCardTapBeforeTrying = 0; // good resonse so reset error time
 
         //XXX 5 seconds seems too close. Maybe 10 minutes?
-        g_authTokenCheckIn.goodUntil = millis() + docJSON["expires_in"].as<int>()*1000 - 5000;   // set expiry five seconds early
+        g_authTokenCheckIn.goodUntil = millis() + docJSON["expires_in"].as<int>()*1000 - 60000;   // set expiry 60 seconds early
         
         debugEvent ("have token now " + String(millis()) + "  Good Until  " + String(g_authTokenCheckIn.goodUntil) );
    
+    } else {
+        // Error with JSON deserialization
+
+        bool realError = true;
+
+        if (g_tokenResponseBuffer.indexOf("access_token") >= 0) {
+            debugEvent("found access_token");
+            // contains a substring we expect we'll call this not a real error
+            // expected in the first message of a token response
+            realError = false;
+        }
+
+        if (g_tokenResponseBuffer.indexOf("}") == g_tokenResponseBuffer.length() - 1 ) {
+            debugEvent("found trailing close brace");
+            // last character is a close brace so we'll call this not a real error
+            // expected in the second message of a token response
+            realError = false;
+        }
+
+        if (realError) {
+            //debugEvent("setting waitForCardTapBeforeTrying ");
+            // this was a real error so don't try again until a human taps a card
+            g_authTokenCheckIn.waitForCardTapBeforeTrying = true;
+        }
+
     }
+
 }
 
 
@@ -1555,7 +1595,7 @@ void loopEquipStation() {
     }
     case wslREQUESTTOKEN: 
         // request a good token from ezf
-        ezfGetCheckInTokenCloud("junk");
+        ezfGetCheckInToken(true);
         processStartMilliseconds = millis();
         wsloopState = wslWAITFORTOKEN;
         break;
@@ -1824,7 +1864,7 @@ void loopCheckIn() {
     case cilREQUESTTOKEN: 
         // request a good token from ezf, might already have a valid token 
         // and this will return immediately 
-        ezfGetCheckInTokenCloud("junk"); // xxx not a cloud function
+        ezfGetCheckInToken(true); // xxx not a cloud function
         processStartMilliseconds = millis();
         cilloopState = cilWAITFORTOKEN;
         break;
@@ -2064,7 +2104,7 @@ enum idcState {
                     // move to the next step
 
                     // request a good token from ezf
-                    ezfGetCheckInTokenCloud("junk");
+                    ezfGetCheckInToken(true);
                     processStartMilliseconds = millis();
 
                     idcState = idcWAITFORTOKEN;
@@ -2199,7 +2239,7 @@ void adminGetUserInfo(int clientID, String memberNumber) {
     case guiIDLE: 
         writeToLCD("Signing in","to EZFacility");
         // request a good token from ezf
-        ezfGetCheckInTokenCloud("junk");
+        ezfGetCheckInToken(false);
         processStartMilliseconds = millis();
         guiState = guiWAITFORTOKEN;
         break;
@@ -2402,7 +2442,6 @@ void setup() {
     Particle.subscribe(System.deviceID() + "mnlogdb",particleCallbackMNLOGDB, MY_DEVICES); // older
     Particle.subscribe(System.deviceID() + "fdb",particleCallbackMNLOGDB, MY_DEVICES); // newer
 
-
     // Used by device types for machine usage permission validation
     //success = Particle.function("PackagesByClientID",ezfGetPackagesByClientID);
     //Particle.subscribe(System.deviceID() + "ezfGetPackagesByClientID",ezfReceivePackagesByClientID, MY_DEVICES);
@@ -2574,7 +2613,7 @@ void loop() {
         break;
     
     case mlsASKFORTOKEN: 
-        ezfGetCheckInToken();  // This is non blocking, call it to preemptively get a token 
+        ezfGetCheckInToken(false);  // This is non blocking, call it to preemptively get a token 
         mainloopState = mlsDEVICELOOP; // initialization is over
         break;
 
@@ -2618,7 +2657,7 @@ void loop() {
     // we do this test so that we always have a good token 
     // the ezfGetCheckInToken() will make sure we don't call the cloud too often
     if ((Time.hour() >= 8) && (Time.hour() <= 23)) {
-        ezfGetCheckInToken();
+        ezfGetCheckInToken(false);
     }
 
     // Reboot once a day.

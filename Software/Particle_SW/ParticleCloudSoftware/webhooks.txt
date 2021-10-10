@@ -58,20 +58,20 @@ file.
 {
     "event": "ezfCheckInToken",
     "responseTopic": "{{PARTICLE_DEVICE_ID}}ezfCheckInToken",
-    "errorResponseTopic": "",
+    "errorResponseTopic": "{{PARTICLE_DEVICE_ID}}ezfCheckInToken",
     "url": "https://api.sandbox.ezfacility.com/token",
     "requestType": "POST",
     "noDefaults": true,
     "rejectUnauthorized": true,
     "responseTemplate": "",
     "headers": {
-        "Authorization": "Basic NGRk...",
+        "Authorization": "Basic NGRkNzk5NjA6ZmIxN2IyZDlhOTU2Y2Y3YmE3NjM2ZDY0MTFmMTAyNDg=",
         "Accept": "application/json",
         "Content-type": "application/x-www-form-urlencoded"
     },
     "form": {
-        "password": "...",
-        "username":  "...",
+        "password": "BlueUSbcandy$",
+        "username": "makernexusdev",
         "grant_type": "password",
         "scope": "realm:tms"
     }
