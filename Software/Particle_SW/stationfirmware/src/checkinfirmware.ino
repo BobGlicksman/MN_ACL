@@ -148,8 +148,9 @@
  *       from hammering the CRM system. Requires an update to ezfCheckinToken webhook that
  *       sets the Error-Response-Topic. After an error will try to get new token only when 
  *       an RFID card is presented.
+ *  2.4  Corrected reporting to FDB on JSON parsing error
 ************************************************************************/
-#define MN_FIRMWARE_VERSION 2.3
+#define MN_FIRMWARE_VERSION 2.4
 
 // Our UTILITIES
 #include "mnutils.h"
@@ -1915,8 +1916,14 @@ void loopCheckIn() {
                 digitalWrite(REJECT_LED,LOW);
 
                 // log this to DB
-                logToDB("client JSON error", ">" + g_cibcidResponseBuffer + "<",g_clientInfo.clientID,"","" );
-
+                String tempout = ">";
+                tempout += g_cibcidResponseBuffer;
+                tempout += "<";
+                String tempout1 = tempout.substring(0,250);
+                logToDB("client JSON error A", tempout1, g_clientInfo.clientID,"","" );
+                tempout1 = tempout.substring(250,tempout.length());
+                logToDB("client JSON error B", tempout1, g_clientInfo.clientID,"","" );
+                
                 cilloopState = cilWAITFORCARD;
             }
 
