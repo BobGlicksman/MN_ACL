@@ -58,20 +58,20 @@ file.
 {
     "event": "ezfCheckInToken",
     "responseTopic": "{{PARTICLE_DEVICE_ID}}ezfCheckInToken",
-    "errorResponseTopic": "",
+    "errorResponseTopic": "{{PARTICLE_DEVICE_ID}}ezfCheckInToken",
     "url": "https://api.sandbox.ezfacility.com/token",
     "requestType": "POST",
     "noDefaults": true,
     "rejectUnauthorized": true,
     "responseTemplate": "",
     "headers": {
-        "Authorization": "Basic NGRk...",
+        "Authorization": "Basic ...",
         "Accept": "application/json",
         "Content-type": "application/x-www-form-urlencoded"
     },
     "form": {
         "password": "...",
-        "username":  "...",
+        "username": "...",
         "grant_type": "password",
         "scope": "realm:tms"
     }
