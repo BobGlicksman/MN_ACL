@@ -1,6 +1,0 @@
-{
-    "particle.targetDevice": "p8-mouth",
-    "particle.firmwareVersion": "3.0.0",
-    "particle.targetPlatform": "photon",
-    "C_Cpp.default.configurationProvider": "particle.particle-vscode-core"
-}
