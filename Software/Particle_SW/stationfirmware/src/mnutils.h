@@ -89,6 +89,7 @@ struct  struct_clientInfo {  // holds info on the current client
     String lastName = "";           // lastName
     String firstName = "";      // just the first lastName
     bool isValid = false;        // when true this sturcture has good data in it
+    bool isError = false;     // when the JSON does not parse, this is set TRUE
     int clientID = 0;           // numeric value assigned by EZFacility. Guaranteed to be unique
     String RFIDCardKey = "";    // string stored in EZFacility "custom fields". We may want to change this name
     String memberNumber = "";   // string stored in EZFacility. May not be unique
