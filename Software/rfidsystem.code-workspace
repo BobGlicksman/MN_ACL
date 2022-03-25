@@ -1,21 +1,21 @@
 {
 	"folders": [
-		{
-			"path": "Particle_SW/stationfirmware"
-		},
-		{
-			"path": "Particle_SW/ParticleCloudSoftware"
-		},
-		{
-			"path": "Facility_Database_SW/datalogging"
-		},
-		{
-			"path": "/Users/jschrempp/Documents/devschrempp/GitHub/jschrempp.MN_ACL/Hardware"
-		},
-		{
-			"path": "/Users/jschrempp/Documents/devschrempp/GitHub/jschrempp.MN_ACL/Documents"
-		}
-	],
+        {
+            "path": "Particle_SW/stationfirmware"
+        },
+        {
+            "path": "Particle_SW/ParticleCloudSoftware"
+        },
+        {
+            "path": "/Users/jschrempp/Documents/devschrempp/GitHub/jschrempp.MN_ACL/Hardware"
+        },
+        {
+            "path": "/Users/jschrempp/Documents/devschrempp/GitHub/jschrempp.MN_ACL/Documents"
+        },
+        {
+            "path": "Facility_Database_SW"
+        }
+    ],
 	"settings": {
 		"cortex-debug.openocdPath": "${command:particle.getDebuggerOpenocdPath}",
 		"files.associations": {
