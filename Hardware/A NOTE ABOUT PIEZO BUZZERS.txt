@@ -1,0 +1,27 @@
+A NOTE ABOUT PIEZO BUZZERS
+
+The specified part, Adafruit P/N 1536, is different from the original part and draws much too much current for the 74HCT125 driver.
+Adafruit is aware of the problem but, as of this date, has not resolved the issue.  In the meantime, two alternative parts were ordered
+from Digikey and evaluated:
+
+1.  Digikey P/N 2223-CPI-137-83T-ND:  These buzzers are rated to draw 10 ma max from a 5 volt supply.  Two were ordered
+	and the measured current was between 3.5 and 3.8 ma.  These buzzers will typically work in the circuit but coule draw
+	a little more current than the 74HCT125 is specified to supply.
+
+2.  Digikey P/N 28-PI-TH12-0541-RK-ND:  These buzzers are rated to draw 5 ma max from a 5 volt supply.  Two were ordered
+	and the measured current was about 1.5 ma.  These buzzers will work in the circuit but are slightly lower in volume than
+	the other buzzer, above.
+
+Another alternative is a high current buzzer module that has a transistor driver on the module; e.g. 
+https://www.amazon.com/dp/B0DYDJMP16?ref=ppx_yo2ov_dt_b_fed_asin_title&th=1.  These buzzer modules are very loud but require
++5 volts, GND and a control signal.  They won't mount directly on the PCB.  Rather:
+
+(a) solder single male pin headers to the + and - of the buzzer on the PCB.
+(b) solder a single pin header to the +5 on the XPND header field.
+(c) wire the buzzer - to the module GND pin
+(d) wire the buzzer + to the I/O control pin of the module,
+(e) wire the +5 on the XPND field to the module Vcc pin.
+
+NOTE: this module is active low, so the software must invert the polarity for the buzzer to work correctly.
+NOTE: this module must be mounted externally to the PCB and female-female jumper wires are needed to connect it to the PCB.
+
